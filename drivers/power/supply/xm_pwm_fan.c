@@ -292,44 +292,14 @@ static int set_pwn_fan_target_level(struct pwm_fan_ctx *ctx, int level)
 static int pwm_fan_support_check(struct pwm_fan_ctx *ctx)
 {
 	struct device_node *np = ctx->dev->of_node;
-	int ret = 0, len = 0;
-	int i = 0;
-	u32 id = 0;
 
 	if (!ctx || !np) {
 		mca_log_err("ctx or np is NULL\n");
 		return -EINVAL;
 	}
 
-	ctx->fan_support = true;
-
-	if (!of_property_read_bool(np, "unsupport_check")) {
-		mca_log_err("no need to check id, pwm fan support\n");
-		return 0;
-	}
-
-	len = of_property_count_elems_of_size(np, "unsupport_id", sizeof(u32));
-	if (len < 0) {
-		mca_log_err("failed to read unsupport_id len of config\n");
-		return -EINVAL;
-	}
-	ret = of_property_read_u32_array(np, "unsupport_id", (u32 *)ctx->unsupport_id, len);
-	if (ret) {
-		mca_log_err("failed to parse unsupport_id\n");
-		return ret;
-	}
-
-	len = min(len, FAN_UNSUPPORT_ID_COUNT);
-	mca_log_err("id:%x, len:%d\n", id, len);
-
-	for (i = 0; i < len; i++) {
-		mca_log_info("unsupport_id[%d]:%x\n", i, ctx->unsupport_id[i]);
-		if (id == ctx->unsupport_id[i]) {
-			ctx->fan_support = false;
-			mca_log_err("id:%x, pwm fan unsupport\n", ctx->unsupport_id[i]);
-			break;
-		}
-	}
+	ctx->fan_support = false;
+	mca_log_err("pwm fan not support\n");
 
 	return 0;
 }

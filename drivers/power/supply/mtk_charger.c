@@ -742,6 +742,13 @@ static void mtk_charger_parse_dt(struct mtk_charger *info,
 		info->fv = 4450;
 	}
 
+	if (of_property_read_u32(np, "fv_2nd", &val) >= 0)
+		info->fv_2nd = val;
+	else {
+		chr_err("failed to parse fv use default\n");
+		info->fv_2nd = 4450;
+	}
+
 	if (of_property_read_u32(np, "fv_normal", &val) >= 0)
 		info->fv_normal = val;
 	else {
@@ -775,22 +782,11 @@ static void mtk_charger_parse_dt(struct mtk_charger *info,
 		chr_err("failed to parse iterm use default\n");
 		info->iterm = 200;
 	}
-	if (of_property_read_u32(np, "iterm_cold", &val) >= 0)
-		info->iterm_cold = val;
-	else {
-		chr_err("failed to parse iterm_cold use iterm\n");
-		info->iterm_cold = info->iterm;
-	}
-	if (of_property_read_u32(np, "iterm_cool", &val) >= 0)
-		info->iterm_cool = val;
-	else {
-		chr_err("failed to parse iterm_cool use iterm\n");
-		info->iterm_cool = info->iterm;
-	}
+
 	if (of_property_read_u32(np, "iterm_warm", &val) >= 0)
 		info->iterm_warm = val;
 	else {
-		chr_err("failed to parse iterm use iterm\n");
+		chr_err("failed to parse iterm_warm use default\n");
 		info->iterm_warm = info->iterm;
 	}
 
@@ -954,7 +950,7 @@ static void mtk_charger_parse_dt(struct mtk_charger *info,
 	/* en_floatgnd */
 	info->en_floatgnd = of_property_read_bool(np, "en_floatgnd");
 
-	info->chg_slidedata_report_support = of_property_read_bool(np, "chg_slidedata_report_support");
+	info->chg_slidedata_report_support = false;
 
 	info->step_normal_chg = of_property_read_bool(np, "step_normal_chg");
 
@@ -1312,8 +1308,9 @@ int smart_bypass_get_flag(void)
 {
 	if(pinfo ==NULL)
 		return 0;
-	chr_err("%s smart_bypass=%d\n", __func__, pinfo->smart_chg[SMART_CHG_BYPASS].en_ret);
-	return pinfo->smart_chg[SMART_CHG_BYPASS].en_ret;
+
+	chr_err("%s smart_bypass=%d\n", __func__, pinfo->smart_bypass_mode);
+	return pinfo->smart_bypass_mode;
 }
 EXPORT_SYMBOL(smart_bypass_get_flag);
 
@@ -3792,8 +3789,12 @@ static int mtk_charger_plug_out(struct mtk_charger *info)
 	info->rev_cable_boosted = 0;
 	info->vbat_over_fv_times = 0;
 	info->dec_step = 0;
+	info->is_in_whitelist = false;
+	info->third_pps_ibus_limit = 0;
+	info->is_dp_connected = false;
 	mca_charge_mievent_set_state(MIEVENT_STATE_PLUG, 0);
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
+	info->first_termination = false;
 	info->dual_vbat_diff_flag = false;
 	bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 	slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
@@ -4008,11 +4009,13 @@ static int mtk_charger_plug_in(struct mtk_charger *info,
 	info->dfx_cyclial_recheck_count = 0;
 	info->vbat_over_fv_times = 0;
 	info->dec_step = 0;
+	info->is_dp_connected = false;
 	vote(info->fcc_votable, FCC_DEC_VOTER, false, 0);
 	smart_charging(info);
 	mca_log_err("mtk_is_charger_on plug in, type:%d\n", chr_type);
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
 	info->dual_vbat_diff_flag = false;
+	info->first_termination = false;
 	bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 	slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 	info->bypass_auth_m = false;
@@ -4418,7 +4421,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 			}
 
 #ifdef CONFIG_SUPPORT_SOUTHCHIP_PDPHY
-			if (pinfo->typec_burn == true && pinfo->typec_port0_plugin) {
+			if(pinfo->typec_burn == true && pinfo->typec_port0_plugin){
 				cancel_delayed_work_sync(&pinfo->typec_burn_monitor_work);
 				schedule_delayed_work(&pinfo->typec_burn_monitor_work, 0);
 			}
@@ -5554,6 +5557,13 @@ static int get_quick_charge_type(struct mtk_charger *info)
 			return QUICK_CHARGE_TURBE;
 	}
 
+	if (info->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO && !info->pd_verifed && info->pd_verify_done) {
+		if (info->apdo_max >= 30)
+			return QUICK_CHARGE_TURBE;
+		else
+			return QUICK_CHARGE_FAST;
+	}
+
 	while (quick_charge_table[j].psy_type != 0) {
 		if (info->real_type == quick_charge_table[j].psy_type) {
 			return quick_charge_table[j].type;
@@ -6447,6 +6457,30 @@ static int pd_state_svid_get(struct mtk_charger *gm,
 {
 	if (gm)
 		*val = gm->pd_state_svid & 0xFFFF;
+	else
+		*val = 0;
+	mca_log_err(": %d\n", *val);
+	return 0;
+}
+
+static int is_dp_connected_set(struct mtk_charger *gm,
+	struct mtk_usb_sysfs_field_info *attr,
+	int val)
+{
+	if (!gm) {
+		return 0;
+	}
+	gm->is_dp_connected = !!val;
+	mca_log_err(": %d\n", gm->is_dp_connected);
+	return 0;
+}
+
+static int is_dp_connected_get(struct mtk_charger *gm,
+	struct mtk_usb_sysfs_field_info *attr,
+	int *val)
+{
+	if (gm)
+		*val = !!gm->is_dp_connected;
 	else
 		*val = 0;
 	mca_log_err(": %d\n", *val);
@@ -7653,6 +7687,7 @@ static struct mtk_usb_sysfs_field_info usb_sysfs_field_tbl[] = {
 	USB_SYSFS_FIELD_RO(otg_burn_status, USB_PROP_OTG_BURN_STATUS),
 	// end of rqc nodes
 	USB_SYSFS_FIELD_RO(chg_disconnect_err, USB_PROP_CHG_DISCONN_ERROR),
+	USB_SYSFS_FIELD_RW(is_dp_connected, USB_PROP_TYPEC_IS_DP_CONNECTED),
 };
 
 int usb_get_property(enum usb_property bp,
@@ -9344,6 +9379,9 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	info->fs_start_time = -1;
 	info->wls_vusb_insert = false;
 	info->battcont_online = true;
+	info->is_in_whitelist = false;
+	info->third_pps_ibus_limit = 0;
+	info->is_dp_connected = false;
 #ifdef CONFIG_SUPPORT_SOUTHCHIP_PDPHY
 	info->typec_port_num = 0;
 	info->typec_port0_plugin = 0;

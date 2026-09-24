@@ -701,7 +701,6 @@ static void set_min_cpus(struct cluster_data *cluster, unsigned int val, int req
 		cluster->min_cpus = min(max_min, cluster->max_cpus);
 	else
 		cluster->min_cpus = default_min_cpus[cluster->cluster_id];
-
 	spin_unlock_irqrestore(&core_ctl_state_lock, flags);
 	core_ctl_cpu_request_trace();
 	wake_up_core_ctl_thread(cluster);
@@ -745,7 +744,6 @@ static void set_max_cpus(struct cluster_data *cluster, unsigned int val, int req
 		cluster->min_cpus = min(cluster->min_cpus, cluster->max_cpus);
 	} else
 		cluster->max_cpus = cluster->num_cpus;
-
 	spin_unlock_irqrestore(&core_ctl_state_lock, flags);
 	core_ctl_cpu_request_trace();
 	wake_up_core_ctl_thread(cluster);
@@ -1094,7 +1092,6 @@ int core_ctl_set_limit_cpus(unsigned int cid,
 	cluster = &cluster_state[cid];
 	max = min(max, cluster->num_cpus);
 	min = min(min, max);
-
 	spin_unlock_irqrestore(&core_ctl_state_lock, flags);
 	set_max_cpus(cluster, max, CORE_CTL_SET_CORE_POWERHAL, 1);
 	set_min_cpus(cluster, min, CORE_CTL_SET_CORE_POWERHAL, 1);
@@ -2807,6 +2804,7 @@ static int cluster_init(const struct cpumask *mask)
 	cluster->nr_up = 0;
 	cluster->nr_assist = 0;
 	cluster->min_cpus = default_min_cpus[cluster->cluster_id];
+
 	cluster->up_thres = get_over_threshold(cluster->cluster_id);
 
 	if (cluster->cluster_id == 0)

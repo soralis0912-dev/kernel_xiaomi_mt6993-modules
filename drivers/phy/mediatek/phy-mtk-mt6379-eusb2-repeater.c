@@ -1025,23 +1025,23 @@ static void eusb2_rptr_prop_parse(struct eusb2_repeater *rptr)
 	} else {
 		/* Device */
 		if (device_property_read_u32(dev, "mediatek,vrt-sel",
-				&rptr->vrt_sel) || rptr->vrt_sel < 0)
+					&rptr->vrt_sel) || rptr->vrt_sel < 0)
 			rptr->vrt_sel =-EINVAL;
 
 		if (device_property_read_u32(dev, "mediatek,rx-sqth",
-				&rptr->rx_sqth) || rptr->rx_sqth < 0)
+					&rptr->rx_sqth) || rptr->rx_sqth < 0)
 			rptr->rx_sqth = -EINVAL;
 
 		if (device_property_read_u32(dev, "mediatek,discth",
-				&rptr->discth) || rptr->discth < 0)
+					&rptr->discth) || rptr->discth < 0)
 			rptr->discth = -EINVAL;
 
 		if (device_property_read_u32(dev, "mediatek,pre-emphasis",
-				&rptr->pre_emphasis) || rptr->pre_emphasis < 0)
+					&rptr->pre_emphasis) || rptr->pre_emphasis < 0)
 			rptr->pre_emphasis = -EINVAL;
 
 		if (device_property_read_u32(dev, "mediatek,equalization",
-				&rptr->equalization) || rptr->equalization < 0)
+					&rptr->equalization) || rptr->equalization < 0)
 			rptr->equalization = -EINVAL;
 
 		dev_info(dev, "vrt-vref:%d, rx_sqth:%d, discth:%d, pre-emphasis:%d, eq:%d",
@@ -1074,11 +1074,11 @@ static void eusb2_rptr_prop_parse(struct eusb2_repeater *rptr)
 			rptr->host_pre_emphasis, rptr->host_equalization);
 		/* HW efuse, SW mode */
 		if (device_property_read_string(dev, "mediatek,intr-ofs",
-				&ofs_str) || kstrtoint(ofs_str, 10, &rptr->intr_ofs) < 0)
+					&ofs_str) || kstrtoint(ofs_str, 10, &rptr->intr_ofs) < 0)
 			rptr->intr_ofs = -(RG_USB20_INTR_CAL_MASK + 1);
 
 		if (device_property_read_string(dev, "mediatek,term-ofs",
-				&ofs_str) || kstrtoint(ofs_str, 10, &rptr->term_ofs) < 0)
+					&ofs_str) || kstrtoint(ofs_str, 10, &rptr->term_ofs) < 0)
 			rptr->term_ofs = -(RG_USB20_TERM_CAL_MASK + 1);
 
 		if (device_property_read_string(dev, "mediatek,host-intr-ofs",

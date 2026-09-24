@@ -108,6 +108,7 @@ module_param(debug_trigger_loop, int, 0644);
 #endif
 #endif
 
+
 #ifdef CONFIG_MI_DISP_DFS_EVENT
 #include "mi_disp/mi_disp_event.h"
 #endif
@@ -11139,6 +11140,7 @@ static void mtk_crtc_cmdq_timeout_cb(struct cmdq_cb_data data)
 	static DEFINE_RATELIMIT_STATE(timeout_rate, 30 * HZ, 1);
 #endif
 
+
 	if (!crtc) {
 		DDPPR_ERR("%s find crtc fail\n", __func__);
 		return;
@@ -11228,6 +11230,7 @@ static void mtk_crtc_cmdq_timeout_cb(struct cmdq_cb_data data)
 				current_time/1000);
 		}
 	}
+
 
 #ifndef DRM_CMDQ_DISABLE
 	if ((mtk_crtc->trig_loop_cmdq_handle) &&

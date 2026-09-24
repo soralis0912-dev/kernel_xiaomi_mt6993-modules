@@ -478,12 +478,21 @@ void xhci_free_endpoint_ring(struct xhci_hcd *xhci,
 		struct xhci_virt_device *virt_dev,
 		unsigned int ep_index)
 {
-	if (xhci_vendor_is_usb_offload_enabled(xhci, virt_dev, ep_index))
-		xhci_vendor_free_transfer_ring(xhci, virt_dev->eps[ep_index].ring, ep_index);
-	else
-		xhci_ring_free_(xhci, virt_dev->eps[ep_index].ring);
+	struct xhci_ring *ring = virt_dev->eps[ep_index].ring;
 
-	virt_dev->eps[ep_index].ring = NULL;
+	/*
+	 * Clear the pointer before freeing the ring to prevent a race where
+	 * xhci_mtk_halt_and_cleanup (under xhci->lock on another CPU) reads
+	 * a stale ep->ring that points to already-freed memory.
+	 * xhci_check_bandwidth_ calls this without holding xhci->lock, so
+	 * concurrent readers could observe the dangling pointer otherwise.
+	 */
+	WRITE_ONCE(virt_dev->eps[ep_index].ring, NULL);
+
+	if (xhci_vendor_is_usb_offload_enabled(xhci, virt_dev, ep_index))
+		xhci_vendor_free_transfer_ring(xhci, ring, ep_index);
+	else
+		xhci_ring_free_(xhci, ring);
 }
 
 /*

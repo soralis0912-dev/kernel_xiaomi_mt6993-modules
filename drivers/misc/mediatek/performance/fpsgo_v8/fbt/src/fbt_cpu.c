@@ -2663,7 +2663,8 @@ void fbt_set_min_cap_locked(struct render_info *thr, int min_cap,
 				fl->action, fl->pid, fl->heavyidx, cur_ts);
 
 		if ((boost_affinity_final && fl->heavyidx) ||
-			(boost_affinity_final == FPSGO_BAFFINITY_B_M && fl->action == XGF_ADD_DEP_NO_LLF))
+			(boost_affinity_final == FPSGO_BAFFINITY_B_M && fl->action == XGF_ADD_DEP_NO_LLF)
+		)
 			fbt_nice_task(fl->pid, 1, &fl->ori_nice);
 		else
 			fbt_nice_task(fl->pid, 0, &fl->ori_nice);

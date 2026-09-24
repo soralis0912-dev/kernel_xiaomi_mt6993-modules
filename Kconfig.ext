@@ -46,6 +46,7 @@ source "$(KCONFIG_EXT_PREFIX)drivers/power/supply/Kconfig"
 
 source "$(KCONFIG_EXT_PREFIX)drivers/power/mca/Kconfig"
 
+
 source "$(KCONFIG_EXT_PREFIX)drivers/rtc/Kconfig"
 
 source "$(KCONFIG_EXT_PREFIX)drivers/remoteproc/Kconfig"
@@ -134,8 +135,9 @@ source "$(KCONFIG_EXT_PREFIX)/drivers/media/virtio/Kconfig"
 
 source "$(KCONFIG_EXT_PREFIX)/drivers/video/backlight/Kconfig"
 
+source "$(KCONFIG_EXT_PREFIX)drivers/mihw/Kconfig"
+
 source "$(KCONFIG_EXT_PREFIX)drivers/hooks/geniezone_vendor_hooks/Kconfig"
 
 source "$(KCONFIG_EXT_PREFIX)/drivers/trusty/Kconfig"
-
 

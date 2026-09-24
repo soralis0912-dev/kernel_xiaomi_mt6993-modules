@@ -454,6 +454,7 @@ static int pd_get_svid(struct adapter_device *dev)
 
 		info->adapter->adapter_svid = pd_vdos[0] & 0x0000FFFF;
 		info->adapter->adapter_id = pd_vdos[2] & 0x0000FFFF;
+		usb_set_property(USB_PROP_TYPEC_PD_STATE_SVID, info->adapter->adapter_svid);
 		pr_info("adapter_svid = %04x\n", info->adapter->adapter_svid);
 		pr_info("adapter_id = %08x\n", info->adapter->adapter_id);
 

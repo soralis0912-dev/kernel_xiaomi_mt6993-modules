@@ -95,6 +95,7 @@ static int parse_config_string(struct ut_info *ut)
 	has_gbl_batt_para = of_property_read_bool(node, "has-global-batt-para");
 	if (has_gbl_batt_para) {
 		bms_get_property(BMS_PROP_BATTERY_PACK_VENDOR, &pack_vendor_id);
+		mca_log_err("pack_vendor_id = %d\n", pack_vendor_id);
 		country = "_cn";
 		switch (pack_vendor_id) {
 		case 0:

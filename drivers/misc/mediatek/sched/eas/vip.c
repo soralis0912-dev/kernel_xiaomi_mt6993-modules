@@ -123,7 +123,6 @@ struct cpumask find_min_num_vip_cpus(struct perf_domain *pd, struct task_struct 
 	bool failed = false;
 	struct cpumask allowed_cpu_mask_for_slow, *pd_cpumask;
 	int cluster;
-
 	cpumask_clear(&vip_candidate);
 	/* Remain this to prevent from crucial error. */
 	if (!pd_ptr) {
@@ -1061,8 +1060,7 @@ void vip_check_preempt_wakeup(void *unused, struct rq *rq, struct task_struct *p
 	struct task_struct *c = rq->curr;
 	bool resched = false;
 	bool p_is_vip, curr_is_vip;
-
-	if (unlikely(!vip_enable))
+if (unlikely(!vip_enable))
 		return;
 
 	vrq = &per_cpu(vip_rq, cpu_of(rq));

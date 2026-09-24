@@ -44,6 +44,7 @@ obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/pinctrl/mediatek/
 
 obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/power/supply/
 
+
 obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/power/mca/
 
 obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/rtc/
@@ -115,5 +116,11 @@ obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/pci/controller/
 obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/media/virtio/
 
 obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/trusty/
+
+obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/mihw/millet/
+
+obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/mihw/
+
+obj-y += ../$(DEVICE_MODULES_REL_DIR)/drivers/block/zram/
 
 endif

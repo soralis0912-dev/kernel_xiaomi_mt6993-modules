@@ -343,7 +343,7 @@
 	pmic_ffc_forbid;
 	en_floatgnd;
 	smart_snschg_v2_support;
-	pd2_input_current = <1700000>;
+	pd2_input_current = <1400000>;
 	min_charger_voltage_1 = <4200000>;
 	min_charger_voltage_2 = <4500000>;
 	sbu_uart_en = <&pio 24 0x0>;
@@ -655,7 +655,7 @@
 &lk_charger {
 	non-std-ac-charger-current = <1000000>;
 	ac-charger-current = <1600000>;
-	ac-charger-input-current = <2000000>;
+	ac-charger-input-current = <1900000>;
 	/* battery temperature protection */
 	temp-t4-threshold = <60>;
 	temp-t3-threshold = <45>;

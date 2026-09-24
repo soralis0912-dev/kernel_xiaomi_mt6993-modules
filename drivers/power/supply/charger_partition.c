@@ -476,7 +476,9 @@ int get_charger_partition_info_1(void)
 	} else {
 		pr_err("[charger] %s: charger_partition NULL, using default info\n", __func__);
 	}
-	pr_err("[charger] %s ret: %d, mishow: %d, zero_speed_mode: %u, power_off_mode: %u\n", __func__, ret, info_1->mishow, info_1->zero_speed_mode, info_1->power_off_mode);
+
+	charger_partition->mi_show = info_1->mishow;
+	pr_err("[charger] %s ret: %d, mishow: %d, zero_speed_mode: %u, power_off_mode: %u mi_show: %d\n", __func__, ret, info_1->mishow, info_1->zero_speed_mode, info_1->power_off_mode, charger_partition->mi_show);
 
 	ret = charger_partition_dealloc(CHARGER_PARTITION_HOST_KERNEL, CHARGER_PARTITION_INFO_1, sizeof(charger_partition_info_1));
 	if(ret < 0) {
@@ -500,6 +502,11 @@ int set_charger_partition_info_1(void)
 		pr_err("[charger] %s failed to alloc\n", __func__);
 		return -1;
 	}
+
+	// mishow: keep original value
+	info_1.mishow = charger_partition->mi_show;
+
+	pr_err("[charger] %s ret: %d, mishow: %d, zero_speed_mode: %u, power_off_mode: %u\n", __func__, ret, info_1.mishow, info_1.zero_speed_mode, info_1.power_off_mode);
 
 	ret = charger_partition_write(CHARGER_PARTITION_HOST_KERNEL, CHARGER_PARTITION_INFO_1, (void *)&info_1, sizeof(charger_partition_info_1));
 	if(ret < 0) {

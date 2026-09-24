@@ -22,7 +22,7 @@ static struct sys_res_record sys_res_stat[SYS_RES_SCENE_NUM];
 struct sys_res_group_info *group_info;
 
 #define NON_RES_SIG_GROUP (0xFFFFFFFF)
-#define DEFAULT_RES_THRESHOLD (30)
+#define DEFAULT_RES_THRESHOLD (25)
 
 static struct sys_res_mapping subsys_mapping[] = {
 	{0, "md"},
@@ -421,10 +421,10 @@ static void lpm_sys_res_stat_log(unsigned int scene)
 						       j + sig_tbl_index);
 
 			if (i == SYS_MAIN_RES_PWR_OFF) {
-				if ((100 - ratio) < threshold)
+				if ((100 - ratio) < threshold / 2)
 					continue;
 			} else {
-				if (ratio < threshold)
+				if (ratio < threshold / 2)
 					continue;
 			}
 

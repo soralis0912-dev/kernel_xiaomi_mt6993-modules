@@ -581,7 +581,7 @@ exit:
 	return ret;
 }
 
-static int nuvolta_1671_get_cep_value(struct nuvolta_1671_chg * chip, u8 *cep)
+static int nuvolta_1671_get_cep_value(struct nuvolta_1671_chg * chip, s8 *cep)
 {
 	int ret = 0;
 	u8 read_buf[128];
@@ -590,7 +590,7 @@ static int nuvolta_1671_get_cep_value(struct nuvolta_1671_chg * chip, u8 *cep)
 	if (ret < 0)
 		return ret;
 
-	*cep = read_buf[0];
+	*cep = (s8)read_buf[0];
 	mca_log_err("cep: %d\n", *cep);
 
 	return ret;
@@ -600,7 +600,7 @@ static int nuvolta_1671_set_vout(struct nuvolta_1671_chg * chip, int vout)
 {
 	int ret = 0;
 	u8 vout_h, vout_l;
-	u8 cep;
+	s8 cep;
 	int max_vol = VOUT_SET_MAX_MV;
 	if (!chip->power_good_flag) {
 		mca_log_info("power good disonline, don't set vout\n");
@@ -611,8 +611,8 @@ static int nuvolta_1671_set_vout(struct nuvolta_1671_chg * chip, int vout)
 
 	if (chip->parallel_charge == true) {
 		ret = nuvolta_1671_get_cep_value(chip, &cep);
-		if (ABS(cep) > ABS_CEP_VALUE) {
-			mca_log_err("vol:%d ,cep %d, not set\n", vout, cep);
+		if (ABS(cep) > ABS_CEP_VALUE && chip->vout_setted <= vout) {
+			mca_log_err("vol:%d ,last_vol:%d, cep %d, not set\n", vout, chip->vout_setted, cep);
 			goto exit;
 		}
 	}
@@ -680,7 +680,7 @@ static int nuvolta_1671_get_vout(struct nuvolta_1671_chg * chip, int *vout)
 {
 	int ret = 0;
 	u8 read_buf[128];
-	u8 cep = 0;
+	s8 cep = 0;
 	if (!chip->power_good_flag) {
 		*vout = 0;
 		return ret;
@@ -699,7 +699,7 @@ static int nuvolta_1671_get_vout(struct nuvolta_1671_chg * chip, int *vout)
 	if (ret < 0)
 		return ret;
 
-	cep = read_buf[0];
+	cep = (s8)read_buf[0];
 
 	mca_log_err("wls_get_vout: %d, cep = %d\n", *vout, cep);
 
@@ -3309,7 +3309,7 @@ static int nuvolta_1671_parse_dt(struct nuvolta_1671_chg *chip)
             memcpy(chip->tx_q1, idata_u8, sizeof(idata_u8));
         }
 
-		ret = of_property_read_u8_array(node, "tx_q2", idata_u8, ADAPTER_LOW_INDUCTANCE_TX_TYPE_MAX);
+			ret = of_property_read_u8_array(node, "tx_q2", idata_u8, ADAPTER_LOW_INDUCTANCE_TX_TYPE_MAX);
         if (ret) {
             chip->tx_q2[ADAPTER_LOW_INDUCTANCE_TX_50W] = WLS_DEFAULT_TX_Q2;
             chip->tx_q2[ADAPTER_LOW_INDUCTANCE_TX_80W] = WLS_DEFAULT_TX_Q2;

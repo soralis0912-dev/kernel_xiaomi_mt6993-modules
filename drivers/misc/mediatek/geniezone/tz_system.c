@@ -21,6 +21,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/kthread.h>
 #include <linux/uaccess.h>
 #include <linux/fcntl.h>
@@ -860,9 +861,14 @@ TZ_RESULT _Gz_KreeServiceCall_body(KREE_SESSION_HANDLE handle, uint32_t command,
 		param[3].value.a = ret;
 		break;
 #endif
+	case REE_SERVICE_CMD_SHM_UNREG:
+		KREE_DEBUG("[REE service call] %s: command = 0x%x, handle 0x%x\n",
+			   __func__, command,param[0].value.a);
+		unregister_shm_by_handle(param[0].value.a);
+		break;
 
 	default:
-		KREE_DEBUG("[REE service call] %s: invalid command = 0x%x\n",
+		KREE_ERR("[REE service call] %s: invalid command = 0x%x\n",
 			   __func__, command);
 		break;
 	}
@@ -1326,7 +1332,11 @@ static int tz_system_probe(struct platform_device *pdev)
 #endif
 
 	tz_system_dev = pdev;
-
+	ret = dma_set_mask_and_coherent(&tz_system_dev->dev,DMA_BIT_MASK(36));
+	if (ret) {
+		KREE_ERR("dma_set_mask_and_coherent fail %d\n",ret);
+		return TZ_RESULT_ERROR_GENERIC;
+	}
 	KREE_INFO("%s-\n", __func__);
 
 	return ret;

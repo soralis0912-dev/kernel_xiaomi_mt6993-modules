@@ -2033,7 +2033,6 @@ void mtk_get_gear_indicies(struct task_struct *p, int *order_index, int *end_ind
 	*reverse = 0;
 	if (num_sched_clusters <= 1)
 		goto out;
-
 	/* gear_start's range -1~num_sched_clusters */
 	if (ghts->gear_start > num_sched_clusters || ghts->gear_start < -1)
 		goto out;
@@ -2169,6 +2168,7 @@ static void mtk_find_best_candidates(struct cpumask *candidates, struct task_str
 	int vip_prio = fbc_params->vip_prio;
 	struct cpumask vip_candidate = fbc_params->vip_candidate;
 	int dpt_v2_support = eenv->dpt_v2_support;
+
 
 	if (!latency_sensitive && !is_vip) {
 		int compress_cpu = compress_to_cpu(p, &eenv->min_cap, &eenv->max_cap, order_index);
@@ -2429,7 +2429,6 @@ void mtk_find_energy_efficient_cpu(void *data, struct task_struct *p, int prev_c
 	bool is_vip = false;
 	int vip_prio = NOT_VIP;
 	struct cpumask vip_candidate;
-
 #if IS_ENABLED(CONFIG_MTK_SCHED_VIP_TASK)
 	struct vip_task_struct *vts = &((struct mtk_static_vendor_task *)p->android_vendor_data1)->vip_task;
 
@@ -2465,7 +2464,6 @@ void mtk_find_energy_efficient_cpu(void *data, struct task_struct *p, int prev_c
 			order_index, end_index, reverse);
 	}
 #endif // CONFIG_MTK_SCHED_VIP_TASK
-
 	if (!pd || READ_ONCE(rd->overutilized)) {
 		select_reason = LB_FAIL;
 		rcu_read_unlock();
@@ -2473,6 +2471,8 @@ void mtk_find_energy_efficient_cpu(void *data, struct task_struct *p, int prev_c
 	}
 
 	irq_log_store();
+
+
 
 	if (sync && cpu_rq(this_cpu)->nr_running == 1 &&
 	    cpumask_test_cpu(this_cpu, p->cpus_ptr) &&

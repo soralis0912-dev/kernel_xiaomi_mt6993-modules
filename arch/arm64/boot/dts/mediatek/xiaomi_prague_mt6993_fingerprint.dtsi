@@ -8,7 +8,7 @@
 &odm {
 	xiaomi_fingerprint: xiaomi_fingerprint {
 		compatible = "xiaomi,xiaomi-fp";
-		xiaomi,vendor_names = "x_n2_431_132_M_SPI3";
+		xiaomi,vendor_names = "P12_n2_431_132_M_SPI3";
 		intr2-pin-enable;
 		intr2-side-config = "AP";
 		intr2-default-electrical = <1 1>;

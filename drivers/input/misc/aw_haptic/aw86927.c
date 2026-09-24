@@ -930,7 +930,7 @@ static int aw86927_haptic_cont_get_f0(struct aw86927 *aw86927)
 	d2s_gain_default = reg_val & AW86927_BIT_DETCFG2_D2S_GAIN;
 	aw86927_i2c_write_bits(aw86927, AW86927_REG_DETCFG2,
 		   AW86927_BIT_DETCFG2_D2S_GAIN_MASK,
-		   AW86927_BIT_DETCFG2_D2S_GAIN_40);
+		   AW86927_BIT_DETCFG2_D2S_GAIN_10);
 	aw86927_haptic_vbat_mode_config(aw86927, AW86927_VBAT_HW_ADJUST_MODE);
 	/* f0 calibrate work mode */
 	aw86927_haptic_play_mode(aw86927, AW86927_CONT_MODE);
@@ -1510,6 +1510,10 @@ void aw86927_haptic_set_gain(struct aw86927 *aw86927, unsigned char gain)
 			comp_gain = 128 * AW_VBAT_REFER / AW_VBAT_MIN;
 			aw_dbg("%s comp gain limit is %d\n", __func__,
 				comp_gain);
+		}else{
+			aw_info("%s: enable vbat comp, gain = %x comp_gain = %x",
+			__func__, gain, comp_gain);
+			aw86927_i2c_write(aw86927, AW86927_REG_PLAYCFG2, comp_gain);
 		}
 	} else {
 		aw_dbg("%s: disable compsensation, vbat=%d, vbat_min=%d, vbat_ref=%d",
@@ -4411,7 +4415,6 @@ int aw86927_haptic_init(struct aw86927 *aw86927)
 	aw86927_haptic_set_bst_peak_cur(aw86927, AW86927_DEFAULT_PEAKCUR);
 	aw86927_haptic_swicth_motor_protect_config(aw86927, AW_PROTECT_EN, AW_PROTECT_VAL);
 	aw86927_haptic_auto_bst_enable(aw86927, false);
-	aw86927_haptic_auto_break_mode(aw86927, false);
 	aw86927_haptic_vbat_mode_config(aw86927, AW86927_VBAT_SW_ADJUST_MODE);
 	mutex_unlock(&aw86927->lock);
 	/* f0 calibration */
@@ -4649,6 +4652,10 @@ void aw86927_haptics_set_gain_work_routine(struct work_struct *work)
 			comp_level = 128 * AW_VBAT_REFER / AW_VBAT_MIN;
 			aw_dbg("%s: comp level limit is %d ",
 				 __func__, comp_level);
+		}else{
+			aw_info("%s: enable vbat comp, level = %x comp level = %x",
+			__func__, aw86927->level, comp_level);
+			aw86927_i2c_write(aw86927, AW86927_REG_PLAYCFG2, comp_level);
 		}
 	} else {
 		aw_dbg("%s: disable compsensation, vbat=%d, vbat_min=%d, vbat_ref=%d",

@@ -1488,7 +1488,6 @@ static int pdm_probe(struct platform_device *pdev)
 
 	of_id = of_match_device(pdm_of_match, &pdev->dev);
 	pdev->id_entry = of_id->data;
-	pdm_err("%s ++\n", __func__);
 	pdpm = kzalloc(sizeof(struct usbpd_pm), GFP_KERNEL);
 	if (!pdpm)
 		return -ENOMEM;

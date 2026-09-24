@@ -1706,12 +1706,18 @@ static void battery_shutdown_vol_v2(struct bq_fg_chip *bq)
 
     I_aver = fg_read_iaver(bq);
     bq->iaver = I_aver;
-    rc = power_supply_get_property(bq->batt_psy,
-                POWER_SUPPLY_PROP_STATUS, &pval);
-    if (rc < 0) {
-        fg_info("failed get batt staus\n");
+    if (!battery_get_psy(bq)) {
+        fg_err("%s fg_update failed to get battery psy\n", bq->log_tag);
         return;
+    } else {
+        rc = power_supply_get_property(bq->batt_psy,
+                    POWER_SUPPLY_PROP_STATUS, &pval);
+        if (rc < 0) {
+            fg_info("failed get batt staus\n");
+            return;
+        }
     }
+    
     charging_status = pval.intval;
     if (I_aver >= -300 && I_aver <= 0 && !bq->iaver_time_flag
             && (charging_status == POWER_SUPPLY_STATUS_DISCHARGING || charging_status == POWER_SUPPLY_STATUS_NOT_CHARGING)) {
@@ -2023,6 +2029,7 @@ static int fg_update_record_voltage_level(struct bq_fg_chip *bq)
     u8 record_voltage[] = {0xB2,0x0C,0x66,0x0D,0x88,0x13};
     int byte_length = 6;
 
+    fg_err("%s do nothing\n", bq->log_tag); //TODO
     return 0;
 
     /*First if updated*/

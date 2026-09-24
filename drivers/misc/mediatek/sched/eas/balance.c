@@ -173,7 +173,6 @@ void try_to_pull_VVIP(int this_cpu, bool *had_pull_vvip, struct rq_flags *src_rf
 	struct rq *src_rq, *this_rq;
 	struct task_struct *p;
 	int cpu, vip_prio;
-
 	if (!cpumask_test_cpu(this_cpu, &bcpus))
 		return;
 
@@ -414,7 +413,8 @@ void hook_sched_balance_newidle(void *data, struct rq *this_rq, struct rq_flags 
 				if (p->policy == SCHED_NORMAL &&
 					cpumask_test_cpu(this_cpu, p->cpus_ptr) &&
 					!(latency_sensitive &&
-					!cpumask_test_cpu(this_cpu, &effective_softmask))) {
+					!cpumask_test_cpu(this_cpu, &effective_softmask))
+				) {
 
 					misfit_task_rq = src_rq;
 					misfit_load = src_rq->misfit_task_load;

@@ -15,7 +15,6 @@
 #include <linux/crypto.h>
 #include <asm/setup.h>
 #include "mi_hwconf_manager.h"
-
 #include "mi_dsi_panel.h"
 #include "mtk_dsi.h"
 

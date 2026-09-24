@@ -49,7 +49,6 @@
 
 #define CREATE_TRACE_POINTS
 #include "eas_trace.h"
-
 #define TAG "EAS_IOCTL"
 #define AOSP_TASK_DATA_SIZE "android_arch_task_struct_size="
 
@@ -204,7 +203,6 @@ static void sched_queue_task_hook(void *data, struct rq *rq, struct task_struct 
 	int cpu = rq->cpu;
 	int type = *(int *)data;
 	struct sugov_rq_data *sugov_data_ptr;
-
 	if (!get_eas_hook())
 		return;
 

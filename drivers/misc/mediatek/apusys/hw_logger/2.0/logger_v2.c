@@ -14,6 +14,7 @@
 #include "logger_v2_ipi.h"
 #include "logger_v2_procfs.h"
 #include "logger_v2_addr.h"
+#include <linux/of_reserved_mem.h>
 
 #if IS_ENABLED(CONFIG_MTK_AEE_IPANIC)
 #include <mt-plat/mrdump.h>
@@ -22,6 +23,8 @@
 #else
 #define add_mrdump(...)
 #endif
+
+static bool g_wsm_from_resv;
 
 
 /* control register ioremap address */
@@ -259,6 +262,34 @@ static int logger_v2_config_init(struct mtk_apu *apu)
 	return 0;
 }
 
+static int get_logger_v2_buf(void)
+{
+	struct device_node  *rmem_node = NULL;
+	struct reserved_mem *rmem = NULL;
+	int ret = 0;
+
+	rmem_node = of_find_compatible_node(NULL, NULL, "mediatek,hw-logger-resv-mem");
+	if (!rmem_node) {
+		HWLOGR_ERR("no node for reserved logger memory\n");
+		goto out;
+	}
+	rmem = of_reserved_mem_lookup(rmem_node);
+	if (!rmem) {
+		HWLOGR_ERR("cannot lookup reserved logger memory\n");
+		goto out;
+	}
+
+	np_log_buf.va = phys_to_virt(rmem->base);
+	np_log_buf.pa = rmem->base;
+	memset(np_log_buf.va, 0, np_log_buf.size);
+
+	ret = 1;
+	g_wsm_from_resv = true;
+
+out:
+	return ret;
+}
+
 static int logger_v2_buf_alloc(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -270,12 +301,18 @@ static int logger_v2_buf_alloc(struct platform_device *pdev)
 		goto out;
 	}
 
-	np_log_buf.va = kzalloc(np_log_buf.size, GFP_KERNEL);
-	if (!np_log_buf.va) {
-		ret = -ENOMEM;
-		goto out;
+	g_wsm_from_resv = false;
+
+	ret = get_logger_v2_buf();
+
+	if (!ret) {
+		np_log_buf.va = kzalloc(np_log_buf.size, GFP_KERNEL);
+		if (!np_log_buf.va) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		np_log_buf.pa = __pa_nodebug(np_log_buf.va);
 	}
-	np_log_buf.pa = __pa_nodebug(np_log_buf.va);
 	add_mrdump(np_log_buf.va, np_log_buf.pa,
 		np_log_buf.size, "APUSYS_LOG");
 
@@ -307,6 +344,7 @@ static int logger_v2_buf_free(struct platform_device *pdev)
 	}
 
 	if (np_log_buf.va) {
+		if (!g_wsm_from_resv)
 		kfree(np_log_buf.va);
 		np_log_buf.va = NULL;
 		np_log_buf.pa = 0;

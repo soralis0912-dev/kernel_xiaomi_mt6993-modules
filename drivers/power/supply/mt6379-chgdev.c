@@ -490,7 +490,7 @@ static int mt6379_get_sub_temp(struct charger_device *chg_dev, int *value)
 		*value = ts_ntc_table[0].temp;
 		dev_err(ddata->dev, "read TS temp value = %d\n", *value);
 		return ret;
-	} else if (res <= ts_ntc_table[size - 1].res) {
+	}  else if (res <= ts_ntc_table[size - 1].res) {
 		*value = ts_ntc_table[size - 1].temp;
 		dev_err(ddata->dev, "read TS temp value = %d\n", *value);
 		return ret;
@@ -539,7 +539,7 @@ static int mt6379_get_ts_temp(struct charger_device *chg_dev, int *value)
 		*value = ts_ntc_table[0].temp;
 		dev_err(ddata->dev, "read TS temp value = %d\n", *value);
 		return ret;
-	} else if (res <= ts_ntc_table[size - 1].res) {
+	}  else if (res <= ts_ntc_table[size - 1].res) {
 		*value = ts_ntc_table[size - 1].temp;
 		dev_err(ddata->dev, "read TS temp value = %d\n", *value);
 		return ret;

@@ -20,6 +20,7 @@
 # define FORCE_MODE_ON 1
 # define FORCE_MODE_OFF 0
 
+
 static int kernel_core_ctrl_force_mode;
 static DEFINE_MUTEX(kernel_core_ctrl_mutex);
 
@@ -98,6 +99,7 @@ static void mtk_set_cpus_allowed_ptr(void *data, struct task_struct *p,
 	// not set or invalid cpu mask
 	if (cpumask_empty(kernel_allowed_mask))
 		goto out;
+
 
 	cpumask_copy(&user_mask, ctx->new_mask);
 

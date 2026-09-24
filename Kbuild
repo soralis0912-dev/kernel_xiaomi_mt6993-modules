@@ -34,6 +34,7 @@ obj-y += drivers/leds/
 
 obj-y += drivers/power/supply/
 
+
 obj-y += drivers/power/mca/
 
 obj-y += drivers/rtc/
@@ -94,7 +95,10 @@ obj-y += drivers/media/virtio/
 
 obj-y += drivers/video/backlight/
 
+obj-y += drivers/mihw/millet/
+
 obj-y += drivers/hooks/geniezone_vendor_hooks/
 
+obj-y += drivers/mihw/
 
 endif

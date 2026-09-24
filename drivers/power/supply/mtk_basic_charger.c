@@ -408,7 +408,7 @@ static bool select_charging_current_limit(struct mtk_charger *info,
 		chr_err("[CHG_CURRENT_LIMIT](i) HVCHG set input current 2A charging\n");
 		type_temp = info->real_type;
 		info->real_type = XMUSB350_TYPE_HVCHG;
-		pdata->input_current_limit =  1600000;
+		pdata->input_current_limit =  1400000;
 		pdata->charging_current_limit = 3000000;
 		is_basic = true;
 		if (type_temp != info->real_type)
@@ -452,8 +452,9 @@ static bool select_charging_current_limit(struct mtk_charger *info,
 			chr_err("[REV_CHG] cap.max_mv=[%d %d], vbus=%d, nr=%d\n", cap.max_mv[0], cap.max_mv[1], get_vbus(info), cap.nr);
 			if (info->support_quick_revchg) {
 				pdata->input_current_limit =  min(2300000, adapter_imax * 1000);
-  				if (cap.nr >= 2) {
-  					if (get_vbus(info) < 6000 && cap.max_mv[1] == 9000) {
+				if (cap.nr >= 2) {
+					if (get_vbus(info) > 3600 && get_vbus(info) < 6000 && cap.max_mv[1] == 9000) {
+						charger_dev_cp_device_init(info->cp_master, 1);
   						adapter_dev_set_cap(info->pd_adapter, MTK_PD_APDO,
   											cap.max_mv[1], cap.ma[1]);
   						chr_err("[REV_CHG] request 9000mv\n");

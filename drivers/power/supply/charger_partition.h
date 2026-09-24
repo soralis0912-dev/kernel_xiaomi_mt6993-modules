@@ -94,6 +94,7 @@ struct ChargerPartition {
 
 	bool is_charger_partition_rdy;
 	int is_eea_mode;
+	bool mi_show;
 };
 
 struct ChargerPartition *get_charger_partition(void);

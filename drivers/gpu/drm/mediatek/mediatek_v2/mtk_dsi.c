@@ -5779,6 +5779,7 @@ static void mtk_output_en_doze_switch(struct mtk_dsi *dsi, enum dsi_transfer_mod
 	}
 #endif
 
+
 	/* Display mode switch */
 	if (panel_funcs->doze_get_mode_flags) {
 		if (!mtk_dsi_is_cmd_mode(&dsi->ddp_comp))
@@ -6821,6 +6822,7 @@ static void mtk_output_dsi_enable(struct mtk_dsi *dsi,
 		}
 #endif
 
+
 		/* cmd mode: TRANSFER_CMD_MODE, vdo mode: TRANSFER_VDO_MODE*/
 		enum dsi_transfer_mode mode = mtk_dsi_is_cmd_mode(&dsi->ddp_comp) ?
 					TRANSFER_CMD_MODE : TRANSFER_VDO_MODE;
@@ -7295,6 +7297,7 @@ static void mtk_output_dsi_disable(struct mtk_dsi *dsi, struct cmdq_pkt *cmdq_ha
 		mi_disp_notifier_call_chain(MI_DISP_DPMS_EARLY_EVENT, &g_notify_data);
 	mi_disp_feature_event_notify_by_type(mi_get_disp_id("primary"), MI_DISP_EVENT_POWER, sizeof(blank), blank);
 #endif
+
 
 #ifdef CONFIG_MI_DISP_DFS_EVENT
 	if (dsi->mi_cfg.whether_backlight_zero) {
@@ -15749,6 +15752,7 @@ static void mtk_dsi_cmd_timing_change(struct mtk_dsi *dsi,
 	struct drm_display_mode *old_mode, *adjust_mode;
 	int ret = 0;
 
+
 	if (!dsi) {
 		DDPPR_ERR("%s, %d, invalid parameter\n", __func__, __LINE__);
 		return;
@@ -19610,6 +19614,7 @@ static int mtk_dsi_probe(struct platform_device *pdev)
 
 		goto error;
 	}
+
 
 #if defined(CONFIG_VIS_DISPLAY_V2_D2)
 	if (is_mi_dev_support_nova()) {

@@ -15,6 +15,7 @@
 #include "sugov/sched_version_ctrl.h"
 #include "sugov/cpufreq.h"
 
+
 #define DEFAULT_RELAX_ENOUGH_TSK_UTIL 30
 
 static int shortcut_compress_rate = -1;
@@ -85,6 +86,7 @@ int compress_to_cpu_pro(struct task_struct *p, unsigned long *tsk_min_clp, unsig
 
 	cpumask_andnot(&unpaused_cpus, cpu_active_mask, cpu_pause_mask);
 	cpumask_and(&unpaused_cluster_cpus, &unpaused_cpus, get_gear_cpumask(order_index));
+
 
 	for_each_cpu(cpu_idx, &unpaused_cluster_cpus) {
 		if (cpu_num >= shortcut_compress_rate)

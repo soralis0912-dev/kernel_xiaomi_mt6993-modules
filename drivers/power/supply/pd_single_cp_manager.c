@@ -345,7 +345,6 @@ static bool pdm_check_votable(struct usbpd_pm *pdpm)
 static int check_third_pps_charger(struct usbpd_pm *pdpm)
 {
 	int usb_vendor_id = 0, product_vdo = 0;
-	int ibus_limit = pdpm->apdo_max_ibus;
 	int apdo_max_raw;
 
 	usb_get_property(USB_PROP_ADAPTER_ID, &product_vdo);
@@ -358,13 +357,14 @@ static int check_third_pps_charger(struct usbpd_pm *pdpm)
 		if (usb_vendor_id == pinfo->third_pps_para[i].usb_vendor_id &&
 			product_vdo == pinfo->third_pps_para[i].product_vdo &&
 			apdo_max_raw == pinfo->third_pps_para[i].max_power) {
-			ibus_limit = pinfo->third_pps_para[i].max_current;
-			mca_log_err("adapter:%d, max_current: %d\n", i, ibus_limit);
+			pinfo->third_pps_ibus_limit  = min(pdpm->apdo_max_ibus * 9 / 10, pinfo->third_pps_para[i].max_current);
+			pinfo->is_in_whitelist = true;
+			mca_log_err("adapter:%d, max_current: %d\n", i, pinfo->third_pps_ibus_limit);
 			break;
 		}
 	}
 
-	return ibus_limit;
+	return 0;
 }
 
 static bool pdm_evaluate_src_caps(struct usbpd_pm *pdpm)
@@ -430,6 +430,7 @@ static bool pdm_evaluate_src_caps(struct usbpd_pm *pdpm)
 				vote(pdpm->fcc_votable, ADAPTER_FCC_VOTER, true, 10000);
 			else if (50 < pdpm->apdo_max_watt/1000000 && pdpm->apdo_max_watt/1000000 <= 67)
 				vote(pdpm->fcc_votable, ADAPTER_FCC_VOTER, true, 12000);
+			/* non-pd_verifed 3th adapter need limit icl charge current */
 		}
 
 		/* adapter suport bypass mode */
@@ -440,14 +441,12 @@ static bool pdm_evaluate_src_caps(struct usbpd_pm *pdpm)
 		} else {
 			pdpm->pd_1_1_mode = true;
 		}
-		{
-			if (pdpm->cap.ma[i] > 2000)
-				pps_current = 2000;
-			else
-				pps_current = pdpm->cap.ma[i] - 200;
-			mca_log_err("pps adapter AICR can't above 2A , current = %d\n", pps_current);
-			vote(pinfo->icl_votable, ADAPTER_ICL_VOTER, true, pps_current);
-		}
+		if (pdpm->cap.ma[i] > 3000)
+			pps_current = 3000;
+		else
+			pps_current = pdpm->cap.ma[i] - 200;
+		mca_log_err("pps adapter AICR can't above 3A , current = %d\n", pps_current);
+		vote(pinfo->icl_votable, ADAPTER_ICL_VOTER, true, pps_current);
 
 		legal_pdo = true;
 	}
@@ -459,7 +458,7 @@ static bool pdm_evaluate_src_caps(struct usbpd_pm *pdpm)
 		if (pdpm->pd_type == MTK_PD_CONNECT_PE_READY_SNK_APDO) {
 			if (pdpm->apdo_max_ibus > MAX_IBUS_67W)
 				pdpm->apdo_max_ibus = MAX_IBUS_67W;
-			pdpm->apdo_max_ibus = check_third_pps_charger(pdpm);
+			check_third_pps_charger(pdpm);
 //			ret = adapter_dev_set_cap_xm(pinfo->pd_adapter, MTK_PD_APDO_START, DEFAULT_PDO_VBUS_1S, DEFAULT_PDO_IBUS_1S);
 			//mca_log_err("MAX_PDO = [%d %d %d]\n", pdpm->apdo_max_vbus, pdpm->apdo_max_ibus, pdpm->apdo_max_watt / 1000000);
 			if (pinfo && pinfo->direct_cap_change_support && pdpm->pd_verifed && pinfo->pd_adapter &&
@@ -475,8 +474,8 @@ static bool pdm_evaluate_src_caps(struct usbpd_pm *pdpm)
 				continue;
 
 			if (pdpm->cap.max_mv[i] == PD2_VBUS && !pdpm->charge_full) {
-				if (pdpm->cap.ma[i] > 1700)
-					pd20_current = 1700;
+				if (pdpm->cap.ma[i] > 1400)
+					pd20_current = 1400;
 				 else
 					pd20_current = pdpm->cap.ma[i];
 				vote(pdpm->icl_votable, ADAPTER_ICL_VOTER, true, pd20_current);
@@ -730,7 +729,7 @@ static void pdm_update_status(struct usbpd_pm *pdpm)
 static int pdm_mode_switch_state_machine(struct usbpd_pm *pdpm)
 {
 	int cp_mode = pdpm->cp_work_mode;
-	int entry_soc = 10;
+	int entry_soc = 30;
 	int high_soc = pdpm->dts_config.high_soc;
 	int fv = 0, high_vbat = 0;
 
@@ -788,9 +787,6 @@ static int pdm_mode_switch_state_machine(struct usbpd_pm *pdpm)
 		pdm_err("high_soc donot switch mode, soc=%d, mode=%d\n", pdpm->soc, cp_mode);
 		return cp_mode;
 	}
-
-	if(pdpm->adapter_id == 0xa565 || pdpm->adapter_id == 0xd561)
-		entry_soc = 25;
 
 	if (pdpm->target_fcc < pdpm->dts_config.switch1_1_enter) {
 		if (pdpm->pd_1_1_mode == true && pdpm->soc > entry_soc) {
@@ -891,13 +887,7 @@ static void pdm_multi_mode_switch(struct usbpd_pm *pdpm)
 	pdpm->vbus_high_gap = 	pdpm->vbat * res * 10/100;
 #endif
 
-	if (pdpm->smart_bypass_trig) {
-		pdpm->ibus_gap = pdpm->dts_config.pdm_bypass_ibus_gap / res;
-	} else {
-		pdpm->ibus_gap = pdpm->dts_config.pdm_ibus_gap / res;
-		if (pdpm->ibus_gap == 0 && res == 1)
-			pdpm->ibus_gap = 800;
-	}
+	pdpm->ibus_gap = pdpm->smart_bypass_trig? (pdpm->dts_config.pdm_bypass_ibus_gap / res) : (pdpm->dts_config.pdm_ibus_gap / res);
 
 	pdpm->entry_vbus = min(min(((pdpm->vbat * res) + pdpm->vbus_low_gap + 100), pdpm->dts_config.max_vbus), pdpm->apdo_max_vbus);
 	pdpm->entry_ibus = min(min((pdpm->target_fcc / res + pdpm->ibus_gap), pdpm->dts_config.max_ibus), pdpm->apdo_max_ibus);
@@ -974,6 +964,8 @@ static int pdm_tune_pdo(struct usbpd_pm *pdpm)
 	pdpm->ibat_step = pdpm->vbat_step = pdpm->ibus_step = pdpm->vbus_step = 0;
 #ifdef CONFIG_SUPPORT_SOUTHCHIP_PDPHY
 	ibus_limit = min(min((pdpm->target_fcc / res + pdpm->ibus_gap), pdpm->apdo_max_ibus), pdpm->dts_config.max_ibus);
+	if(pinfo->is_in_whitelist)
+		ibus_limit = min(ibus_limit, pinfo->third_pps_ibus_limit);
 #else
 	ibus_limit = min(min((pdpm->target_fcc / res  + pdpm->ibus_gap), pdpm->apdo_max_ibus), pdpm->dts_config.max_ibus);
 #endif
@@ -1157,8 +1149,10 @@ static int pdm_check_condition(struct usbpd_pm *pdpm)
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
 	struct timespec64 time_now;
 	ktime_t ktime_now;
+	int ret = 0;
+	static bool rerun_once = false;
 #endif
-	int fv = 0, high_vbat = 0;
+	int fv = 0, high_vbat = 0, low_vbat = CP_EN_VBAT_LOW_THRESHOLD;
 	int high_soc = 0;
 	if (pdpm->cp_work_mode == SC8561_FORWARD_1_1_CHARGER_MODE) {
 		min_fcc = pdpm->smart_bypass_trig? MIN_1_1_BYPASS_CHARGE_CURRENT : MIN_1_1_CHARGE_CURRENT;
@@ -1187,7 +1181,7 @@ static int pdm_check_condition(struct usbpd_pm *pdpm)
 		high_vbat = (pdpm->cycle_count < 800)? (fv-90) : ((pdpm->cycle_count < 1200)? (fv-120) : (fv-150));
 		high_soc = (pdpm->cycle_count < 800)? pdpm->dts_config.high_soc : ((pdpm->cycle_count < 1200)? 90 : 85);
 	}
-	mca_log_err("min_fcc =%d, high_vbat=%d, high_soc=%d\n", min_fcc, high_vbat, high_soc);
+	mca_log_err("min_fcc =%d, high_vbat=%d, low_vbat=%d, high_soc=%d\n", min_fcc, high_vbat, low_vbat, high_soc);
 
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
 	ktime_now = ktime_get_boottime();
@@ -1247,7 +1241,27 @@ static int pdm_check_condition(struct usbpd_pm *pdpm)
 	} else if(pdpm->smart_soclmt_trig) {
 		mca_log_err("PDM_SM_HOLD smart soclmt state=%d,soc=%d\n", pdpm->state, pdpm->soc);
 		return PDM_SM_HOLD;
-	} else
+	} else if (pdpm->vbat < low_vbat) {
+		mca_log_err("PDM_SM_HOLD state=%d, vbat=%d, too low to start cp\n", pdpm->state, pdpm->vbat);
+		return PDM_SM_HOLD;
+	}
+#ifdef CONFIG_SUPPORT_DUAL_BATTERY
+	else if (time_now.tv_sec <= 25 && !rerun_once && pdpm->apdo_max_vbus == 11000 && pdpm->apdo_max_ibus == 2000 && pdpm->apdo_max_watt == 22000000 && pdpm->adapter_id == 0) {
+		if (pinfo->typec_port1_plugin)
+			ret = tcpm_dpm_pd_get_source_cap(pinfo->tcpc1, NULL);
+		else
+			ret = tcpm_dpm_pd_get_source_cap(pinfo->tcpc, NULL);
+
+			mca_log_err("use OPPP PBTB05 22W [%d %d %d]\n", pdpm->apdo_max_vbus, pdpm->apdo_max_ibus, pdpm->apdo_max_watt / 1000000);
+			mca_log_err("time_now = %d get source cap ret = %d", time_now.tv_sec, ret);
+			rerun_once = true;
+		if (ret != TCPM_SUCCESS)
+			return PDM_SM_EXIT;
+		else
+			return PDM_SM_HOLD;
+	}
+#endif
+	else
 	{
 		return PDM_SM_CONTINUE;
 	}
@@ -1487,7 +1501,6 @@ static bool pdm_handle_sm(struct usbpd_pm *pdpm)
 			adapter_dev_set_cap_xm(pinfo->pd_adapter, MTK_PD_APDO, req_vbus, req_ibus);
 			charger_dev_get_vbus(pdpm->master_dev, &cp_cur_vbus);
 			mca_log_err("exit request vbus=%d ibus=%d cp_vbus=%d\n", req_vbus, req_ibus, cp_cur_vbus);
-			exit_vbus_threshold = 6400;
 			for (retry_cnt = 0; retry_cnt < 10; retry_cnt++) {
 				mca_log_err("retry %d, cp_cur_vbus = %d\n", retry_cnt, cp_cur_vbus);
 				if (cp_cur_vbus < exit_vbus_threshold) {

@@ -1016,7 +1016,7 @@ static void monitor_thermal_limit(struct mtk_charger *info)
 	}
 }
 
-#define CHARGE_SW_CV_VBAT_ALARM_DELTA 20
+#define CHARGE_SW_CV_VBAT_ALARM_DELTA 30
 #define MCA_WLS_CHG_ENABLE_FASTCHG_CNT 2
 #define FFC_EXIT_CNT_MAX  3
 __maybe_unused
@@ -1157,15 +1157,24 @@ static int handle_ffc_charge(struct mtk_charger *info)
 		}
 	}
 
-	if (info->jeita_chg_index[0] == 0) {
-		iterm = info->iterm_cold;
-	} else if (info->jeita_chg_index[0] == 1) {
-		iterm = info->iterm_cool;
-	} else if (info->temp_now >= info->ffc_high_tbat) {
-		iterm = info->iterm_warm;
-	} else {
-		iterm = info->iterm;
+	if (info->batt_cell_supplier == 1)
+	{
+		info->iterm_warm = info->iterm_warm_2nd;
 	}
+
+	if (info->jeita_chg_index[0] == 0) {
+		if (info->batt_cell_supplier == 1)
+		{
+			info->fv = info->fv_2nd;
+		}
+	} else {
+		info->fv = info->jeita_fv_cfg[info->jeita_chg_index[0]].value;
+	}
+
+	if (info->temp_now > 30)
+		iterm = info->iterm_warm;
+	else
+		iterm = info->iterm;
 	check_exit_ffc_mode(info);
 
 	if(info->switch_pmic_normal) {
@@ -1481,6 +1490,7 @@ static void battery_check_recharge(struct mtk_charger *info)
 			}
 			recharge_count = 0;
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
+			info->first_termination = false;
 			bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 			slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 			slave_bms_set_property(BMS_PROP_CHARGING_DONE, 0);
@@ -1509,15 +1519,10 @@ static void battery_check_full(struct mtk_charger *info)
 			iterm = min(info->iterm_ffc, ITERM_FCC_WARM);
 		}
 	} else {
-		if (info->jeita_chg_index[0] == 0) {
-			iterm = info->iterm_cold;
-		} else if (info->jeita_chg_index[0] == 1) {
-			iterm = info->iterm_cool;
-		} else if (info->temp_now >= info->ffc_high_tbat) {
+		if (info->temp_now >= 30)
 			iterm = info->iterm_warm;
-		} else {
+		else
 			iterm = info->iterm;
-		}
 	}
 
 	if (info->support_lp_chgr_term_adjust && is_low_power_charger_type(info->real_type))
@@ -1546,11 +1551,14 @@ static void battery_check_full(struct mtk_charger *info)
 				threshold_mv = 100;
 			}
 		}
+		if (info->wls_online) {
+			threshold_2_mv = (info->ffc_enable)? info->diff_fv_val : info->diff_fv_val * 2;
+		}
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
 		if ((info->vbat_now_master >= fv_effective - threshold_mv - threshold_2_mv) &&
 				((-info->current_now_m <= iterm) || ((-info->current_now_m <= iterm_effective + 100) && info->bbc_charge_done))) {
 #else
-		if ((info->vbat_now >= fv_effective - threshold_mv - threshold_2_mv) &&
+		if ((info->vbat_now >= fv_effective - threshold_mv - threshold_2_mv) && info->current_now <= 0 &&
 				((-info->current_now <= iterm) || ((-info->current_now <= iterm_effective + 100) && info->bbc_charge_done))) {
 #endif
 			full_count++;
@@ -1563,6 +1571,11 @@ static void battery_check_full(struct mtk_charger *info)
 			info->charge_eoc = true;
 			mca_log_err("charge_full notify gauge eoc\n");
 			bms_set_property(BMS_PROP_CHARGE_EOC, true);
+#ifdef CONFIG_SUPPORT_DUAL_BATTERY
+			if (info->ffc_enable) {
+				slave_bms_set_property(BMS_PROP_CHARGE_EOC, true);
+			}
+#endif
 		}
 		if (info->charge_eoc) {
 			info->eoc_count++;
@@ -1572,7 +1585,14 @@ static void battery_check_full(struct mtk_charger *info)
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
 		if (info->eoc_count && !info->dual_vbat_diff_flag) {
 			info->charge_full_m = true;
-			bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 1);
+			if (info->ffc_enable) {
+				info->charge_eoc_s = true;
+				info->eoc_count_s++;
+			} else if (!info->first_termination) {
+				info->first_termination = true;
+				mca_log_err("charge_full notify gauge eoc\n");
+				bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 1);
+			}
 		}
 #endif
 	}else{
@@ -1638,6 +1658,9 @@ static void slave_battery_check_full(struct mtk_charger *info)
 			full_count = 0;
 			info->charge_eoc_s = true;
 			mca_log_err("charge_full notify gauge eoc\n");
+			if (info->ffc_enable) {
+				bms_set_property(BMS_PROP_CHARGE_EOC, true);
+			}
 			slave_bms_set_property(BMS_PROP_CHARGE_EOC, true);
 		}
 
@@ -1648,7 +1671,14 @@ static void slave_battery_check_full(struct mtk_charger *info)
 		}
 		if (info->eoc_count_s && !info->dual_vbat_diff_flag) {
 			info->charge_full_s = true;
-			slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 1);
+			if (info->ffc_enable) {
+				info->charge_eoc = true;
+				info->eoc_count++;
+			} else if (!info->first_termination) {
+				info->first_termination = true;
+				mca_log_err("slave charge_full notify gauge eoc\n");
+				slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 1);
+			}
 		}
 	}else{
 		full_count = 0;
@@ -1715,6 +1745,7 @@ static void battery_check_terminate(struct mtk_charger *info)
 			charger_dev_enable(info->chg1_dev, false);//diable pmic
 			charger_dev_enable_powerpath(info->chg1_dev, true);
 #ifdef CONFIG_SUPPORT_DUAL_BATTERY
+			info->first_termination = false;
 			bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 			slave_bms_set_property(BMS_PROP_CONTROL_BATT_CHG, 0);
 #endif
@@ -2936,6 +2967,7 @@ static void reset_dfx_cyclial_report(struct mtk_charger *info)
 		}
 	}
 
+
 	chr_err("%s: type=0x%lx\n", __func__, info->dfx_cyclial_report_type);
 
 	// clear report info
@@ -3234,9 +3266,17 @@ static enum alarmtimer_restart smart_bypass_hold_timer_handler(struct alarm *ala
 
 static void smart_chg_handle_bypass_chg(struct mtk_charger *info)
 {
-	int bypass_mode = smart_bypass_get_flag();
-	int board_temp = info->board_temp / 100;
+	int bypass_mode = 0;
+	int board_temp = 0;
 	int curr_lmt = 0;
+
+	if (!info) {
+		chr_err("%s: info is null\n", __func__);
+		return;
+	}
+
+	bypass_mode = info->smart_chg[SMART_CHG_BYPASS].en_ret;
+	board_temp = info->board_temp / 100;
 
 	if (!bypass_mode)
 		goto _bypass_chg_quit;
@@ -3669,16 +3709,6 @@ static int parse_battery_cycle_dts(struct mtk_charger *info, int cycle)
 		cell_supplier = "_lwn";
 	}
 
-	if (info->batt_cell_supplier == 3) {
-		cell_supplier = "_cos";
-	} else {
-		cell_supplier = "";
-	}
-
-	if (is_between(info->ffc_medium_tbat, info->ffc_high_tbat, info->temp_now)) {
-		cell_temp = "_warm";
-	}
-
 	/* step parameter */
 	memset(info->step_chg_cfg, 0, sizeof(info->step_chg_cfg));
 	ret = snprintf(name, sizeof(name), "step_chg_cfg%s_%d_cycle%s", cell_temp, cycle, cell_supplier);
@@ -3822,13 +3852,15 @@ static int parse_step_charge_config(struct mtk_charger *info, bool force_update)
 	cycle_count = info->cycle_count;
 	mca_log_err("cycle_count = %d, aged_in_advance = %d\n", cycle_count, aged_in_advance);
 
-	if (cycle_count <= 100) {
-		battery_cycle = BATTERY_CYCLE_1_TO_100;
+	if (cycle_count <= 50) {
+		battery_cycle = BATTERY_CYCLE_1_TO_50;
+	} else if (cycle_count > 50 && cycle_count <= 100) {
+		battery_cycle = BATTERY_CYCLE_50_TO_100;
 	} else if (cycle_count > 100 && cycle_count <= 300) {
 		battery_cycle = BATTERY_CYCLE_100_TO_300;
 	} else if (cycle_count > 300 && cycle_count <= 800) {
-		battery_cycle = BATTERY_CYCLE_300_TO_400;
-	}else{
+		battery_cycle = BATTERY_CYCLE_300_TO_800;
+	} else {
 		battery_cycle = BATTERY_CYCLE_800_TO_MORE;
 	}
 
@@ -3994,6 +4026,7 @@ int step_jeita_init(struct mtk_charger *info, struct device *dev)
 	int total_length = 0, i = 0, ret = 0;
 	char* cell_supplier = "";
 	char name[64];
+	u32 val = 0;
 	if (!np) {
 		chr_err("no device node\n");
 		return -EINVAL;
@@ -4165,7 +4198,17 @@ int step_jeita_init(struct mtk_charger *info, struct device *dev)
 		return ret;
 	}
 
+	ret = bms_get_property(BMS_PROP_CELL_SUPPLIER, &val);
+	if (ret)
+		chr_err("failed to get gauge batt_cell_supplier\n");
+	else
+		info->batt_cell_supplier = val;
 
+	if (info->batt_cell_supplier == 2) {
+		cell_supplier = "_atl";
+	} else {
+		cell_supplier = "_lwn";
+	}
 
 	ret = snprintf(name, sizeof(name), "jeita_fcc_cfg%s", cell_supplier);
 	total_length = of_property_count_elems_of_size(np, name, sizeof(u32));
@@ -4365,8 +4408,6 @@ int step_jeita_init(struct mtk_charger *info, struct device *dev)
 	if (gpio_is_valid(info->burn_control_gpio)) {
 		gpio_direction_output(info->burn_control_gpio, 0);
 	}
-
-	info->chg_slidedata_report_support = of_property_read_bool(np, "chg_slidedata_report_support");
 
 	INIT_DELAYED_WORK(&info->charge_monitor_work, charge_monitor_func);
 	INIT_DELAYED_WORK(&info->usb_otg_monitor_work, monitor_usb_otg_burn);

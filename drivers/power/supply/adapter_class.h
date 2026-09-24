@@ -138,6 +138,7 @@ enum uvdm_state {
 };
 
 #define USB_PD_MI_SVID			0x2717
+#define USB_DP_SVID			0xff01
 #define USBPD_UVDM_SS_LEN		4
 #define USBPD_UVDM_VERIFIED_LEN		1
 

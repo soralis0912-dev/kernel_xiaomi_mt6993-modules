@@ -95,3 +95,12 @@ config MTK_AEE_YOCTO
 	  It adds an additional layer of protection by checking the
 	  SELinux attributes when accessing dev/aed0 and dev/aed1,
 	  preventing unauthorized tasks from gaining access.
+
+config MTK_HANGDET_CHECK_IRQ
+	bool "Record per-CPU IRQ info on watchdog kick thread"
+	help
+	  Enable the per-CPU RT watchdog kick thread to record per-CPU IRQ statistics.
+	  On each periodic kick (~15 s), the last CPU that runs the kicker records
+	  a snapshot of IRQ numbers and counts for all CPUs. Two consecutive snapshots
+	  are kept so the delta over ~15 s can be examined to identify IRQ storms,
+	  stuck CPUs, or abnormal interrupt activity

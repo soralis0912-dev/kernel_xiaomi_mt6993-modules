@@ -17698,6 +17698,7 @@ static int mtk_dsi_probe(struct platform_device *pdev)
 		goto error;
 	}
 
+
 #if IS_ENABLED(CONFIG_ENABLE_DSI_HOTPLUG)
 	dsi->hotplug_task = kthread_create(mtk_dsi_hotplug_kthread, dsi, "hotplug");
 	//wake_up_process(dsi->hotplug_task);

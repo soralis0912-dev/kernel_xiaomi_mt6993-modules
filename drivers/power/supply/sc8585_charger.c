@@ -278,7 +278,6 @@ struct sc858x_chip {
     int vwpc_volt;
     int die_temp;
     int chip_ok;
-
     int mode;
     int vbus_error;
     int acdrv_mode;
@@ -1043,12 +1042,36 @@ static int sc858x_check_conv_ocp(struct sc858x_chip *sc)
     return ret;
 }
 
+static void sc858x_check_vusb_insert_disable_wls(struct sc858x_chip *sc)
+{
+    int ret;
+    int flag = 0;
+    int wls_enable = 0, wls_online = 0, wls_rev_online = 0;
+
+    wls_get_property(WLS_PROP_PG_ONLINE, &wls_online);
+    wls_get_property(WLS_PROP_REVERSE_CHG_MODE, &wls_rev_online);
+    dev_err(sc->dev,"reg 0x%x=0x%x mode=%d\n",cp_intr_flag[8].reg, flag, sc->mode);
+
+   ret = regmap_read(sc->regmap, cp_intr_flag[8].reg, &flag);
+     if ((sc->mode == SC858X_MASTER || sc->mode == SC858X_STANDALONG) && (flag & cp_intr_flag[8].bit[6].mask)) {
+        dev_err(sc->dev,"trigger :%s\n",cp_intr_flag[8].bit[6].name);
+        wls_get_property(WLS_PROP_ENABLE_CHARGE, &wls_enable);
+        if (wls_enable) {
+            wls_set_property(WLS_PROP_VUSB_INSERT, 1);
+            if (wls_online || wls_rev_online)
+                wls_set_property(WLS_PROP_SWITCH_USB, 1);
+            wls_set_property(WLS_PROP_ENABLE_CHARGE, 0);
+        }
+    }
+}
+
 static irqreturn_t sc858x_irq_handler(int irq, void *dev_id)
 {
     struct sc858x_chip *sc = dev_id;
 
     dev_err(sc->dev,"%s INT OCCURED\n", __func__);
 
+    sc858x_check_vusb_insert_disable_wls(sc);
     sc858x_check_conv_ocp(sc);
     sc858x_check_fault_status(sc);
     return IRQ_HANDLED;
@@ -1335,17 +1358,14 @@ static int sc858x_init_protection(struct sc858x_chip *sc, int forward_work_mode)
 		ret = sc858x_set_busovp_th(sc, 22000);
 		ret = sc858x_set_busocp_th(sc, 4625);
 		ret = sc858x_set_usbovp_th(sc, 21000);
-		ret = sc858x_set_vwpcovp_th(sc, 22000);
 	} else if (forward_work_mode == CP_FORWARD_2_TO_1) {
 		ret = sc858x_set_busovp_th(sc, 11000);
 		ret = sc858x_set_busocp_th(sc, 5850);
 		ret = sc858x_set_usbovp_th(sc, 12000);
-		ret = sc858x_set_vwpcovp_th(sc, 14000);
 	} else {
 		ret = sc858x_set_busovp_th(sc, 6000);
 		ret = sc858x_set_busocp_th(sc, 5500);
 		ret = sc858x_set_usbovp_th(sc, 6500);
-		ret = sc858x_set_vwpcovp_th(sc, 6500);
 	}
 
 	return ret;
@@ -1959,13 +1979,11 @@ static int sc858x_charger_probe(struct i2c_client *client)
     int ret = 0;
     int val = 0;
     int i;
-
     dev_err(&client->dev, "%s (%s)\n", __func__, SC858X_DRV_VERSION);
 
     sc = devm_kzalloc(&client->dev, sizeof(struct sc858x_chip), GFP_KERNEL);
     if (!sc)
 	    return -ENOMEM;
-
     sc->dev = &client->dev;
     sc->client = client;
 

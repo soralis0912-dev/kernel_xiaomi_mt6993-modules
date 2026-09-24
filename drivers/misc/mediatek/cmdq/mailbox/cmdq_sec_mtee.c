@@ -6,8 +6,14 @@
 #include <linux/arm-smccc.h>
 #include <linux/soc/mediatek/mtk-cmdq-ext.h>
 #include "cmdq_sec_mtee.h"
+#include <linux/of_reserved_mem.h>
 
 static bool cmdq_mtee;
+
+/* static flags to indicate if memory is from reserved mem (true) or kzalloc (false) */
+static bool g_wsm_from_resv;
+static bool g_wsm_ex_from_resv;
+static bool g_wsm_ex2_from_resv;
 
 void cmdq_sec_mtee_setup_context(struct cmdq_sec_mtee_context *tee)
 {
@@ -50,61 +56,105 @@ s32 cmdq_sec_mtee_allocate_shared_memory(struct cmdq_sec_mtee_context *tee,
 	return status;
 }
 
+int cmdq_resv_mem_init(void **wsm_buffer, u32 size, void **wsm_buf_ex, u32 size_ex,
+	void **wsm_buf_ex2)
+{
+	struct device_node  *rmem_node = NULL;
+	struct reserved_mem *rmem = NULL;
+	int ret = 0;
+
+	rmem_node = of_find_compatible_node(NULL, NULL, "mediatek,cmdq-resv-mem");
+
+	if (!rmem_node) {
+		cmdq_err("error: no node for reserved cache memory");
+		return ret;
+	}
+	rmem = of_reserved_mem_lookup(rmem_node);
+	if (!rmem) {
+		cmdq_err("[%s] error: cannot lookup reserved cache memory.\n", __func__);
+		return ret;
+	}
+
+	*wsm_buffer = phys_to_virt(rmem->base);
+	*wsm_buf_ex = phys_to_virt(rmem->base + PAGE_ALIGN(size));
+	*wsm_buf_ex2 = phys_to_virt(rmem->base + PAGE_ALIGN(size) + PAGE_ALIGN(size_ex));
+	cmdq_err("%s: buffer:%p:%#lx", __func__, *wsm_buffer, (unsigned long)*wsm_buffer);
+	cmdq_err("%s: buffer:%p:%#lx", __func__, *wsm_buf_ex, (unsigned long)*wsm_buf_ex);
+	cmdq_err("%s: buffer:%p:%#lx", __func__, *wsm_buf_ex2, (unsigned long)*wsm_buf_ex2);
+
+	/* Mark that memory is from reserved region, should not kfree */
+	g_wsm_from_resv = true;
+	g_wsm_ex_from_resv = true;
+	g_wsm_ex2_from_resv = true;
+
+	ret = 1;
+	return ret;
+}
+
 s32 cmdq_sec_mtee_allocate_wsm(void **wsm_buffer, u32 size, void **wsm_buf_ex, u32 size_ex,
 	void **wsm_buf_ex2, u32 size_ex2)
 {
 	s32 retry_cnt = 0, total_retry_cnt = 5;
+	int ret;
 
 	if (!wsm_buffer || !wsm_buf_ex || !wsm_buf_ex2) {
 		cmdq_err("null wsm pointer!");
 		return -EINVAL;
 	}
 
-	/* region_id = 0, mapAry = NULL for continuous */
-	do {
-		*wsm_buffer = kzalloc(size, GFP_KERNEL);
-		if (*wsm_buffer)
-			break;
-		cmdq_err("allocate wsm_buffer failed, retry cnt:%d", retry_cnt);
-	} while (++retry_cnt < total_retry_cnt);
-	if (!*wsm_buffer) {
-		cmdq_err("allocate wsm_buffer failed, size:%d", size);
-		return -ENOMEM;
-	}
-	cmdq_log("%s: allocate wsm_buffer, size:%d buffer:%p:%#lx",
-		__func__, size, *wsm_buffer, (unsigned long)*wsm_buffer);
+	/* Initialize flags to false (memory from kzalloc by default) */
+	g_wsm_from_resv = false;
+	g_wsm_ex_from_resv = false;
+	g_wsm_ex2_from_resv = false;
 
-	retry_cnt = 0;
-	do {
-		*wsm_buf_ex = kzalloc(size_ex, GFP_KERNEL);
-		if (*wsm_buf_ex)
-			break;
-		cmdq_err("allocate wsm_buf_ex failed, retry cnt:%d", retry_cnt);
-	} while (++retry_cnt < total_retry_cnt);
-	if (!*wsm_buf_ex) {
-		kfree(*wsm_buffer);
-		cmdq_err("allocate wsm_buffer failed, size:%d", size_ex);
-		return -ENOMEM;
-	}
-	cmdq_log("%s: allocate wsm_buf_ex, size:%d buffer:%p:%#lx",
-		__func__, size, *wsm_buf_ex, (unsigned long)*wsm_buf_ex);
+	ret = cmdq_resv_mem_init(wsm_buffer, size, wsm_buf_ex, size_ex, wsm_buf_ex2);
 
-	retry_cnt = 0;
-	do {
-		*wsm_buf_ex2 = kzalloc(size_ex2, GFP_KERNEL);
-		if (*wsm_buf_ex2)
-			break;
-		cmdq_err("allocate wsm_buf_ex2 failed, retry cnt:%d", retry_cnt);
-	} while (++retry_cnt < total_retry_cnt);
-	if (!*wsm_buf_ex2) {
-		kfree(*wsm_buffer);
-		kfree(*wsm_buf_ex);
-		cmdq_err("allocate wsm_buf_ex2 failed, size:%d", size_ex2);
-		return -ENOMEM;
-	}
-	cmdq_log("%s: allocate wsm_buf_ex2, size:%d buffer:%p:%#lx",
-		__func__, size, *wsm_buf_ex2, (unsigned long)*wsm_buf_ex2);
+	if (!ret) {
+		/* region_id = 0, mapAry = NULL for continuous */
+		do {
+			*wsm_buffer = kzalloc(size, GFP_KERNEL);
+			if (*wsm_buffer)
+				break;
+			cmdq_err("allocate wsm_buffer failed, retry cnt:%d", retry_cnt);
+		} while (++retry_cnt < total_retry_cnt);
+		if (!*wsm_buffer) {
+			cmdq_err("allocate wsm_buffer failed, size:%d", size);
+			return -ENOMEM;
+		}
+		cmdq_log("%s: allocate wsm_buffer, size:%d buffer:%p:%#lx",
+			__func__, size, *wsm_buffer, (unsigned long)*wsm_buffer);
 
+		retry_cnt = 0;
+		do {
+			*wsm_buf_ex = kzalloc(size_ex, GFP_KERNEL);
+			if (*wsm_buf_ex)
+				break;
+			cmdq_err("allocate wsm_buf_ex failed, retry cnt:%d", retry_cnt);
+		} while (++retry_cnt < total_retry_cnt);
+		if (!*wsm_buf_ex) {
+			kfree(*wsm_buffer);
+			cmdq_err("allocate wsm_buffer failed, size:%d", size_ex);
+			return -ENOMEM;
+		}
+		cmdq_log("%s: allocate wsm_buf_ex, size:%d buffer:%p:%#lx",
+			__func__, size, *wsm_buf_ex, (unsigned long)*wsm_buf_ex);
+
+		retry_cnt = 0;
+		do {
+			*wsm_buf_ex2 = kzalloc(size_ex2, GFP_KERNEL);
+			if (*wsm_buf_ex2)
+				break;
+			cmdq_err("allocate wsm_buf_ex2 failed, retry cnt:%d", retry_cnt);
+		} while (++retry_cnt < total_retry_cnt);
+		if (!*wsm_buf_ex2) {
+			kfree(*wsm_buffer);
+			kfree(*wsm_buf_ex);
+			cmdq_err("allocate wsm_buf_ex2 failed, size:%d", size_ex2);
+			return -ENOMEM;
+		}
+		cmdq_log("%s: allocate wsm_buf_ex2, size:%d buffer:%p:%#lx",
+			__func__, size, *wsm_buf_ex2, (unsigned long)*wsm_buf_ex2);
+	}
 	return TZ_RESULT_SUCCESS;
 }
 
@@ -129,6 +179,8 @@ s32 cmdq_sec_mtee_register_wsm(struct cmdq_sec_mtee_context *tee,
 		*wsm_buffer = kzalloc(size, GFP_KERNEL);
 		if (!*wsm_buffer)
 			return -ENOMEM;
+		/* memory allocated by kzalloc, should kfree when free */
+		g_wsm_from_resv = false;
 	}
 	tee->wsm_param.size = size;
 	tee->wsm_param.buffer = (void *)(u64)virt_to_phys(*wsm_buffer);
@@ -150,6 +202,8 @@ s32 cmdq_sec_mtee_register_wsm(struct cmdq_sec_mtee_context *tee,
 			kfree(*wsm_buffer);
 			return -ENOMEM;
 		}
+		/* memory allocated by kzalloc, should kfree when free */
+		g_wsm_ex_from_resv = false;
 	}
 	tee->wsm_ex_param.size = size_ex;
 	tee->wsm_ex_param.buffer = (void *)(u64)virt_to_phys(*wsm_buf_ex);
@@ -171,6 +225,8 @@ s32 cmdq_sec_mtee_register_wsm(struct cmdq_sec_mtee_context *tee,
 			kfree(*wsm_buf_ex);
 			return -ENOMEM;
 		}
+		/* memory allocated by kzalloc, should kfree when free */
+		g_wsm_ex2_from_resv = false;
 	}
 
 	tee->wsm_ex2_param.size = size_ex2;
@@ -201,13 +257,21 @@ s32 cmdq_sec_mtee_free_wsm(struct cmdq_sec_mtee_context *tee,
 		return -EINVAL;
 
 	KREE_UnregisterSharedmem(tee->wsm_pHandle, tee->wsm_handle);
-	kfree(*wsm_buffer);
+
+	/* Only kfree if memory was allocated by kzalloc, not from reserved mem */
+	if (!g_wsm_from_resv) {
+		kfree(*wsm_buffer);
+	}
 	*wsm_buffer = NULL;
 
-	kfree(*wsm_buf_ex);
+	if (!g_wsm_ex_from_resv) {
+		kfree(*wsm_buf_ex);
+	}
 	*wsm_buf_ex = NULL;
 
-	kfree(*wsm_buf_ex2);
+	if (!g_wsm_ex2_from_resv) {
+		kfree(*wsm_buf_ex2);
+	}
 	*wsm_buf_ex2 = NULL;
 
 	return 0;

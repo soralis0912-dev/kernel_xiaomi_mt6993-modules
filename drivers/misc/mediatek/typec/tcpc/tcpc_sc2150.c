@@ -54,6 +54,7 @@ struct sc2150 {
 	uint16_t chip_vid;
 	bool wd0_state;
 	struct regulator *mt6661_reg_ln60_5;
+	struct delayed_work power_filter_dwork;
 };
 
 
@@ -469,7 +470,24 @@ static inline int sc2150_init_prv_mask(struct tcpc_device *tcpc)
 static irqreturn_t sc2150_intr_handler(int irq, void *data)
 {
 	struct sc2150 *sc = data;
+	int cc_alert = 0;
+	int power_stat = 0;
 	pm_wakeup_event(sc->dev, SC2150_IRQ_WAKE_TIME);
+
+	cc_alert = sc2150_i2c_read8(sc->tcpc, TCPC_V10_REG_ALERT);
+	if (cc_alert < 0) {
+		dev_err(sc->dev, "%s read TCPC_V10_REG_ALERT err %d\n", __func__, cc_alert);
+	}
+	if (cc_alert == TCPC_V10_REG_ALERT_POWER_STATUS) {
+		power_stat = sc2150_i2c_read8(sc->tcpc, TCPC_V10_REG_POWER_STATUS);
+		if (power_stat < 0) {
+			dev_err(sc->dev, "%s read POWER_STATUS err %d\n", __func__, power_stat);
+		}
+		if ((power_stat & TCPC_V10_REG_POWER_STATUS_VBUS_PRES) == 0) {
+			schedule_delayed_work(&sc->power_filter_dwork, msecs_to_jiffies(15));
+			return IRQ_HANDLED;
+		}
+	}
 
 	tcpci_lock_typec(sc->tcpc);
 	tcpci_alert(sc->tcpc, false);
@@ -1292,6 +1310,13 @@ static inline int sc2150_check_revision(struct i2c_client *client)
     return did;
 }
 
+static void sc2150p_power_filter_dwork_handler(struct work_struct *work) {
+	struct sc2150 *sc = container_of(work, struct sc2150, power_filter_dwork.work);
+	tcpci_lock_typec(sc->tcpc);
+	tcpci_alert(sc->tcpc, false);
+	tcpci_unlock_typec(sc->tcpc);
+}
+
 static int sc2150_i2c_probe(struct i2c_client *client)
 {
 	struct sc2150 *sc;
@@ -1340,6 +1365,7 @@ static int sc2150_i2c_probe(struct i2c_client *client)
         dev_err(&client->dev, "sc2150 tcpc dev init fail\n");
         goto err_tcpc_reg;
     }
+    INIT_DELAYED_WORK(&sc->power_filter_dwork, sc2150p_power_filter_dwork_handler);
 
     ret = sc2150_init_alert(sc->tcpc);
     if (ret < 0) {

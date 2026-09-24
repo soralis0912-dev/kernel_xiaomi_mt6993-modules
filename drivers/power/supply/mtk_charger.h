@@ -289,6 +289,16 @@ enum hvdcp3_type {
 	HVDCP35_27,
 };
 
+enum product_no{
+	PRODUCT_NO,
+	WARHOL_GL,
+	PRAGUE_CN,
+	ARISTOTLE_GL,
+	YILI_CN,
+	CHICAGO_CN,
+	CHICAGO_GL,
+};
+
 enum {
 	CHG_STAT_SLEEP,
 	CHG_STAT_VBUS_RDY,
@@ -952,6 +962,8 @@ struct mtk_charger {
 	struct mutex cable_out_lock;
 	int cable_out_cnt;
 	int third_pps_para_size;
+	bool is_in_whitelist;
+	int third_pps_ibus_limit;
 
 	/* system lock */
 	spinlock_t slock;
@@ -1167,6 +1179,7 @@ struct mtk_charger {
 	bool last_pdo_valid;
 	bool revchg_bcl;
 	// end of rqc vars
+	bool is_dp_connected;
 	struct delayed_work sic_mode_report_work;
 
 	// CC toggle switch
@@ -1227,6 +1240,7 @@ struct mtk_charger {
 	int wls_pmic_parachg_mode;
 	bool charge_full_s;
 	bool charge_full_m;
+	bool first_termination;
 	int current_now_m;
 	int current_now_s;
 	int eoc_count;
@@ -1386,6 +1400,7 @@ enum usb_property {
 	USB_PROP_TYPEC_PD_STATE_SVID,
 	USB_PROP_OTG_BURN_STATUS,
 	USB_PROP_CHG_DISCONN_ERROR,
+	USB_PROP_TYPEC_IS_DP_CONNECTED,
 };
 
 /* Xiaomi reverse cable constants */

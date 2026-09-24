@@ -1275,7 +1275,7 @@ void xhci_kill_endpoint_urbs(struct xhci_hcd *xhci,
 			xhci_kill_ring_urbs(xhci, ring);
 		}
 	} else {
-		ring = ep->ring;
+		ring = READ_ONCE(ep->ring);
 		if (!ring)
 			return;
 		xhci_dbg_trace_(xhci, trace_xhci_dbg_cancel_urb,

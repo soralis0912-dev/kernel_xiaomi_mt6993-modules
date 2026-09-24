@@ -739,14 +739,13 @@ static int irq_to_ipi_type(int irq)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 #define MAX_HWT_IRQ_FILE_SIZE SZ_256K
 #define MAX_HWT_IRQ_BUF_SIZE 0x00015400 /* SZ_256K/3 ~= 85k */
-#define CHK_HWT_IRQ 1
 #define MAX_HWT_IRQ_BUF_NUM 3
 static unsigned int irq_buf_index;
 static char *hwt_irq_info;
 static char *irq_buf_array[MAX_HWT_IRQ_BUF_NUM];
-#if CHK_HWT_IRQ
 static char *cur_buf;
 static int write_irq_buf_index;
 
@@ -1077,7 +1076,7 @@ static void kwdt_dump_func(void)
 	mt_aee_dump_irq_info();
 #endif
 	show_irq_count();
-#if CHK_HWT_IRQ
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 	save_irq_info();
 #endif
 	sysrq_sched_debug_show_at_AEE();
@@ -1230,7 +1229,7 @@ static void kwdt_process_kick(int local_bit, int cpu,
 	static int j;
 #endif
 #endif
-#if CHK_HWT_IRQ
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 	bool save_irq_flag = false;
 #endif
 
@@ -1306,7 +1305,7 @@ static void kwdt_process_kick(int local_bit, int cpu,
 	if ((((~(local_bit - 1)) & local_bit) == local_bit) && j++ > 3) {
 		int cpu = 0;
 		int smp_ret[MAX_CPUNR] = {255};
-#if CHK_HWT_IRQ
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 		save_irq_flag = true;
 #endif
 
@@ -1382,7 +1381,7 @@ static void kwdt_process_kick(int local_bit, int cpu,
 		cpus_skip_bit |= (1 << original_kicker);
 	}
 
-#if CHK_HWT_IRQ
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 	if (save_irq_flag) {
 		save_irq_flag = false;
 		save_irq_info();
@@ -1953,7 +1952,7 @@ static int __init hangdet_init(void)
 		is_s2idle_status = 1;
 	}
 
-#if IS_ENABLED(CONFIG_MTK_HANG_DETECT_DB)
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 	hwt_irq_info = kmalloc(MAX_HWT_IRQ_FILE_SIZE, GFP_KERNEL);
 	if (hwt_irq_info != NULL) {
 		irq_buf_array[0] = hwt_irq_info;
@@ -2159,7 +2158,9 @@ static void __exit hangdet_exit(void)
 	}
 
 	aee_reboot_hook_exit();
+#if IS_ENABLED(CONFIG_MTK_HANGDET_CHECK_IRQ)
 	kfree(hwt_irq_info);
+#endif
 	timer_list_debug_exit();
 }
 

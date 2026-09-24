@@ -72,6 +72,7 @@ EXPORT_SYMBOL_GPL(get_swpm_pwr_coef);
 struct cpumask __cpu_pause_mask;
 EXPORT_SYMBOL(__cpu_pause_mask);
 
+
 struct perf_domain *find_pd(struct perf_domain *pd, int cpu)
 {
 	while (pd) {

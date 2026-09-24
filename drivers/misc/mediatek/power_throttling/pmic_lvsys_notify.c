@@ -183,6 +183,8 @@ struct pmic_lvsys_notify {
 	int thd_volts_l_size;
 	int thd_volts_h_size;
 	int bat_type;
+	int lvsys2_f_irq;
+	int lvsys2_r_irq;
 };
 
 struct pmic_lvsys_notify *lvsys_notify;
@@ -321,6 +323,16 @@ static bool is_multi_level_lvsys(void)
 	if (hwcid == 0x63)
 		return false;
 	return true;
+}
+
+static unsigned int get_hwcid(void)
+{
+	const struct pmic_lvsys_info *info = lvsys_notify->info;
+	unsigned int hwcid = 0;
+
+	regmap_read(lvsys_notify->regmap, info->hwcid, &hwcid);
+
+	return hwcid;
 }
 
 static int lvsys_unlock(bool unlock)
@@ -547,6 +559,28 @@ static irqreturn_t lvsys_f_int_handler(int irq, void *data)
 		mutex_unlock(&lvsys_notify->lock);
 		return IRQ_HANDLED;
 	}
+
+	/* timer excessive triggering */
+	if (get_hwcid() == 0x61 && irq == lvsys_notify->lvsys2_f_irq) {
+		if (get_cur_lv_idx() == 0) {
+			dev_notice(lvsys_notify->dev,
+				   "LVSYS_INT2_FALLING triggered, but cur_lv_idx = 0\n");
+			lvsys_notify->falling_flag[0] = true;
+			lvsys_notify->cur_hv_ptr = get_next_hv_ptr();
+			if (lvsys_notify->cur_lv_ptr + 1 &&
+			   (lvsys_notify->cur_lv_ptr + 1 <= lvsys_notify->thd_volts_l +
+							    lvsys_notify->thd_volts_l_size - 1)) {
+				lvsys_notify->cur_lv_ptr++;
+			}
+#if LVSYS_DBG
+		} else {
+			dev_notice(lvsys_notify->dev,
+				   "LVSYS_INT2_FALLING triggered, and cur_lv_idx = %d\n",
+				   get_cur_lv_idx());
+#endif
+		}
+	}
+
 	int_notify = lvsys_notify->info->lvsys_int_notify[(get_cur_lv_idx() * LVSYS_EDGE_NUM) + 1];
 	lvsys_notify->falling_flag[get_cur_lv_idx()] = true;
 #if LVSYS_DBG
@@ -592,6 +626,23 @@ static irqreturn_t lvsys_r_int_handler(int irq, void *data)
 		mutex_unlock(&lvsys_notify->lock);
 		return IRQ_HANDLED;
 	}
+
+	/* timer excessive triggering */
+	if (get_hwcid() == 0x61 && irq == lvsys_notify->lvsys2_r_irq) {
+		if (get_cur_hv_idx() == 0) {
+			dev_notice(lvsys_notify->dev,
+				   "LVSYS_INT2_RISING triggered, but cur_hv_idx = 0\n");
+			mutex_unlock(&lvsys_notify->lock);
+			return IRQ_HANDLED;
+#if LVSYS_DBG
+		} else {
+			dev_notice(lvsys_notify->dev,
+				   "LVSYS_INT2_RISING triggered, and cur_hv_idx = %d\n",
+				   get_cur_hv_idx());
+#endif
+		}
+	}
+
 	int_notify = lvsys_notify->info->lvsys_int_notify[get_cur_hv_idx() * LVSYS_EDGE_NUM];
 	lvsys_notify->falling_flag[get_cur_hv_idx()] = false;
 #if LVSYS_DBG
@@ -929,6 +980,11 @@ static int pmic_lvsys_notify_probe(struct platform_device *pdev)
 			dev_notice(&pdev->dev, "failed to get %s irq, ret:%d\n", lvsys_int[i], irq);
 			return irq;
 		}
+		if (strcmp(lvsys_int[i], "LVSYS2_F") == 0)
+			lvsys_notify->lvsys2_f_irq = irq;
+		else if (strcmp(lvsys_int[i], "LVSYS2_R") == 0)
+			lvsys_notify->lvsys2_r_irq = irq;
+
 		if (strstr(lvsys_int[i], "_F")) {
 #if LVSYS_DBG
 			pr_info("%s falling lvsys_int[%d]: %s matched\n",

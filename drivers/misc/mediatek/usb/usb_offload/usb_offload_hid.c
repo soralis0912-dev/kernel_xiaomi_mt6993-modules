@@ -126,7 +126,7 @@ static int xhci_realloc_hid_ring(struct hid_ep_info *hid, enum uo_provider_type 
 static struct xhci_ring *xhci_get_hid_tr_ring(struct hid_ep_info *hid);
 
 /* urb/payload helper */
-static void dump_urb(struct urb *urb, const char *tag);
+static void dump_urb(struct urb *urb, const char *tag, bool force_print);
 static void giveback_hid(struct work_struct *work_struct);
 static void giveback_urb(struct urb *urb, int actual_length, int status);
 static struct dsp_payload *new_payload(struct hid_ep_info *hid, int length, int status);
@@ -202,6 +202,7 @@ static void hid_trace_dequeue(void *unused, struct urb *urb)
 			/* scenario: HID offloading begin*/
 			hid_ep_active(hid, &intf_desc, &ep_desc, urb);
 			hid_dump_ep(hid, "<HID Dequeue:Active>");
+			dump_urb(urb, "<HID Dequeue:Active>", true);
 		} else
 			/* scenario: Suspend w/o streaming*/
 			goto ignore;
@@ -270,6 +271,7 @@ bool usb_offload_trace_hid_enqueue(struct xhci_hcd *xhci, struct urb *urb)
 		/* scenario: Abnormal case */
 		set_bit(HID_BUSY, &hid->sync_flag);
 		hid_dump_ep(hid, "<HID Enqueue:Ignore>");
+		dump_urb(urb, "<HID Enqueue:Ignore>", true);
 		hid_unlock(hid, __func__);
 		hid_offload_reset(hid);
 		goto ignore;
@@ -358,10 +360,28 @@ error:
 	return ret;
 }
 
-static void dump_urb(struct urb *urb, const char *tag)
+static void dump_urb(struct urb *urb, const char *tag, bool force_print)
 {
-	hid_dbg("%s urb:%p unlinked:%d use_count:%d reject:%d\n", tag,
-		urb, urb->unlinked, atomic_read(&urb->use_count), atomic_read(&urb->reject));
+	struct list_head *tmp;
+	bool empty, found = false;
+
+	empty = list_empty(&urb->ep->urb_list);
+	if (!empty) {
+		list_for_each(tmp, &urb->ep->urb_list) {
+			found = (tmp == &urb->urb_list);
+			if (found)
+				break;
+		}
+	}
+
+	if (force_print)
+		hid_info("%s urb:%p list_empty:%d found:%d unlinked:%d use_count:%d reject:%d\n",
+			tag, urb, empty, found,urb->unlinked,
+			atomic_read(&urb->use_count), atomic_read(&urb->reject));
+	else
+		hid_dbg("%s urb:%p list_empty:%d found:%d unlinked:%d use_count:%d reject:%d\n",
+			tag, urb, empty, found,urb->unlinked,
+			atomic_read(&urb->use_count), atomic_read(&urb->reject));
 }
 
 static void giveback_urb(struct urb *urb, int actual_length, int status)
@@ -372,7 +392,7 @@ static void giveback_urb(struct urb *urb, int actual_length, int status)
 	urb->actual_length = actual_length;
 	usb_hcd_unlink_urb_from_ep(hcd, urb);
 	usb_hcd_giveback_urb(hcd, urb, status); /* unlinked = status */
-	dump_urb(urb, "<Giveback URB>");
+	dump_urb(urb, "<Giveback URB>", false);
 }
 
 static void giveback_hid(struct work_struct *work_struct)
@@ -601,6 +621,12 @@ void usb_offload_hid_finish(void)
 			continue;
 		}
 
+		if (HID_BLK_TEST(HID_BLK_SUSPEND)) {
+			hid_err("%s Test blocking Suspend\n", hid->name);
+			hid_unlock(hid, __func__);
+			continue;
+		}
+
 		giveback_cnt = get_cnt(hid, GIVEBACK);
 		payload_cnt = get_cnt(hid, PAYLOAD);
 
@@ -758,6 +784,11 @@ static void stop_dsp(struct hid_ep_info *hid, bool dsp_running)
 	struct xhci_hcd *xhci = uodev->xhci;
 	struct xhci_virt_device *virt_dev;
 
+	if (!dsp_running) {
+		hid_info("DSP wasn't running, skip stopping dsp\n");
+		return;
+	}
+
 	/* stop endpoint first */
 	if ((xhci->xhc_state & XHCI_STATE_DYING) || (xhci->xhc_state & XHCI_STATE_HALTED)) {
 		hid_info("xhci was halted or dying\n");
@@ -778,7 +809,7 @@ static void stop_dsp(struct hid_ep_info *hid, bool dsp_running)
 
 skip_stop_ep:
 	/* inform dsp to stop */
-	if (dsp_running && !usb_offload_send_ipi_msg(UOI_DISABLE_HID, &msg, sizeof(struct usb_offload_urb_msg))) {
+	if (!usb_offload_send_ipi_msg(UOI_DISABLE_HID, &msg, sizeof(struct usb_offload_urb_msg))) {
 		clear_bit(HID_DSP_RUNNING, &hid->sync_flag);
 		hid_dump_ep(hid, "<End DSP>");
 	}
@@ -960,7 +991,7 @@ static struct skip_urb *new_skip_urb(struct urb *urb)
 	if (skip_urb) {
 		INIT_LIST_HEAD(&skip_urb->list);
 		skip_urb->urb = urb;
-		dump_urb(urb, "Enqueue URB");
+		dump_urb(urb, "Enqueue URB", false);
 	}
 	return skip_urb;
 }
@@ -1010,7 +1041,7 @@ static struct skip_urb *clear_skip_urb(struct hid_ep_info *hid, struct urb *urb)
 	list_for_each_entry(pos, &hid->skip_urb_list, list) {
 		if (pos->urb == urb) {
 			remove_skip_urb(hid, pos);
-			dump_urb(urb, "<Dequeue URB>");
+			dump_urb(urb, "<Dequeue URB>", false);
 			if (usb_hcd_check_unlink_urb(bus_to_hcd(urb->dev->bus), urb, 0) < 0) {
 				hid_err("%s urb:%p has unlinked????\n", hid->name, urb);
 				return NULL;
@@ -1029,7 +1060,7 @@ static void clear_skip_urb_list(struct hid_ep_info *hid, struct list_head *store
 	hid_info("%s clear %ld skip_urb\n", hid->name, get_cnt(hid, SKIP_URB));
 	list_for_each_entry_safe(pos, next, &hid->skip_urb_list, list) {
 		remove_skip_urb(hid, pos);
-		dump_urb(pos->urb, "<Dequeue URB List>");
+		dump_urb(pos->urb, "<Dequeue URB List>", false);
 		if (usb_hcd_check_unlink_urb(bus_to_hcd(pos->urb->dev->bus), pos->urb, 0) < 0) {
 			hid_err("%s urb:%p has unlinked???\n", hid->name, pos->urb);
 			free_skip_urb(pos);

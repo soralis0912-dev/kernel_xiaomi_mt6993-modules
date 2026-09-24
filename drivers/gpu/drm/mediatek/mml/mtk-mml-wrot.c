@@ -33,6 +33,10 @@
 #include "smi_public.h"
 #endif
 
+/* 0: ori, 1: stash all off, 2: 1 rotate block, 3: first stash cmd */
+int mml_wrot_stash_ver = 3;
+module_param(mml_wrot_stash_ver, int, 0644);
+
 /* WROT register offset */
 enum wrot_register {
 	VIDO_CTRL,
@@ -2432,9 +2436,12 @@ static s32 wrot_config_tile(struct mml_comp *comp, struct mml_task *task,
 
 	/* config address boundary for stash prefetch */
 	if (wrot->data->stash && mml_stash_en(cfg->info.mode)) {
+		mml_msg("wrot_tar_xsize %u, wrot_tar_ysize %u out_xs %u out_ys %u out_xe %u out_ye %u",
+			wrot_tar_xsize, wrot_tar_ysize, out_xs, out_ys, out_xe, out_ye);
 		if (!MML_FMT_COMPRESS(dest_fmt))
 			wrot_calc_stash_addr_boundary(comp, pkt, dest_fmt, dest->rotate,
-				wrot_tar_ysize, dest->data.y_stride, dest->data.uv_stride);
+				dest->rotate == MML_ROT_90 ? out_xe + 1 : out_ye + 1,
+				dest->data.y_stride, dest->data.uv_stride);
 		else
 			mml_log("[warn]stash addr boundary not support for format %#010x",
 				dest_fmt);
@@ -2548,8 +2555,23 @@ static s32 wrot_config_tile(struct mml_comp *comp, struct mml_task *task,
 			 * VIDO_STASH_LEAD_CMD_NUM	[ 4: 1] 1
 			 * VIDO_STASH_FUNC_EN		[ 0: 0] 1
 			 */
-			cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_CMD_FUNC_1],
-				0x10080023, U32_MAX);
+			if (mml_wrot_stash_ver == 1) {
+				mml_msg("VIDO_STASH_CMD_FUNC_1: stash off set 0x0");
+				cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_CMD_FUNC_1],
+					0, U32_MAX);
+			} else if (mml_wrot_stash_ver == 2) {
+				mml_msg("VIDO_STASH_CMD_FUNC_1: first rotate block set 0x100C0023");
+				cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_CMD_FUNC_1],
+					0x100C0023, U32_MAX);
+			} else if (mml_wrot_stash_ver == 3) {
+				mml_msg("VIDO_STASH_CMD_FUNC_1: first stash cmd set 0x10040023");
+				cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_CMD_FUNC_1],
+					0x10040023, U32_MAX);
+			} else {
+				mml_msg("VIDO_STASH_CMD_FUNC_1: ori set 0x10080023");
+				cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_CMD_FUNC_1],
+					0x10080023, U32_MAX);
+			}
 			cmdq_pkt_write(pkt, NULL, base_pa + wrot->reg[VIDO_STASH_DELAY_CNT],
 				delay_cnt, U32_MAX);
 		} else {
@@ -2993,7 +3015,7 @@ static void wrot_debug_dump(struct mml_comp *comp)
 {
 	struct mml_comp_wrot *wrot = comp_to_wrot(comp);
 	void __iomem *base = comp->base;
-	u32 value[48];
+	u32 value[60];
 	u32 debug[33];
 	u32 dbg_id = 0, state, smi_req;
 	u32 shadow_ctrl;
@@ -3126,6 +3148,33 @@ static void wrot_debug_dump(struct mml_comp *comp)
 			value[46], value[47]);
 	}
 
+	if (wrot->data->stash) {
+		value[48] = readl(base + wrot->reg[VIDO_STASH_CMD_INTF]);
+		value[49] = readl(base + wrot->reg[VIDO_STASH_CMD_FUNC_1]);
+		value[50] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR]);
+		value[51] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR_HIGH]);
+		value[52] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR_C]);
+		value[53] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR_HIGH_C]);
+		value[54] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR_V]);
+		value[55] = readl(base + wrot->reg[VIDO_STASH_OFST_ADDR_HIGH_V]);
+		value[56] = readl(base + wrot->reg[VIDO_STASH_SW_ADDR]);
+		value[57] = readl(base + wrot->reg[VIDO_STASH_SW_ADDR_HIGH]);
+		value[58] = readl(base + wrot->reg[VIDO_STASH_SW_WORK]);
+		value[59] = readl(base + wrot->reg[VIDO_STASH_DELAY_CNT]);
+
+		mml_err("VIDO_STASH_CMD_INTF %#010x VIDO_STASH_CMD_FUNC_1 %#010x",
+			value[48], value[49]);
+		mml_err("VIDO_STASH_OFST_ADDR %#010x VIDO_STASH_OFST_ADDR_HIGH %#010x",
+			value[50], value[51]);
+		mml_err("VIDO_STASH_OFST_ADDR_C %#010x VIDO_STASH_OFST_ADDR_HIGH_C %#010x",
+			value[52], value[53]);
+		mml_err("VIDO_STASH_OFST_ADDR_V %#010x VIDO_STASH_OFST_ADDR_HIGH_V %#010x",
+			value[54], value[55]);
+		mml_err("VIDO_STASH_SW_ADDR %#010x VIDO_STASH_SW_ADDR_HIGH %#010x",
+			value[56], value[57]);
+		mml_err("VIDO_STASH_SW_WORK %#010x VIDO_STASH_DELAY_CNT %#010x",
+			value[58], value[59]);
+	}
 	for (i = 0; i < ARRAY_SIZE(debug) / 3; i++) {
 		mml_err("VIDO_DEBUG %02X %#010x VIDO_DEBUG %02X %#010x VIDO_DEBUG %02X %#010x",
 			i * 3 + 1, debug[i * 3],

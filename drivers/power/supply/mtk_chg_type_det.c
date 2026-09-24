@@ -286,6 +286,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 	struct tcp_notify *noti = data;
 	uint8_t old_state = TYPEC_UNATTACHED, new_state = TYPEC_UNATTACHED;
 	enum power_supply_typec_mode typec_mode = POWER_SUPPLY_TYPEC_NONE;
+	int wls_enable = 0, wls_online = 0, wls_rev_online = 0;
 #ifdef CONFIG_SUPPORT_SOUTHCHIP_PDPHY
 	int port0_temp = 0, port1_temp = 0, ret = 0;
 #endif
@@ -308,6 +309,16 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 		     new_state == TYPEC_ATTACHED_CUSTOM_SRC ||
 		     new_state == TYPEC_ATTACHED_DBGACC_SNK)) {
 			mca_log_err("Charger plug in, polarity = %d\n", noti->typec_state.polarity);
+			wls_get_property(WLS_PROP_ENABLE_CHARGE, &wls_enable);
+			if (wls_enable) {
+				mca_log_err("Charger plug in, sleep wls\n");
+				wls_get_property(WLS_PROP_PG_ONLINE, &wls_online);
+				wls_get_property(WLS_PROP_REVERSE_CHG_MODE, &wls_rev_online);
+				wls_set_property(WLS_PROP_VUSB_INSERT, 1);
+				if (wls_online || wls_rev_online)
+					wls_set_property(WLS_PROP_SWITCH_USB, 1);
+				wls_set_property(WLS_PROP_ENABLE_CHARGE, 0);
+			}
 			typec_mode = get_source_mode(noti);
 			handle_typec_pd_attach(mci, idx, ATTACH_TYPE_TYPEC);
 		} else if ((old_state == TYPEC_ATTACHED_SNK ||
@@ -317,6 +328,10 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 				old_state == TYPEC_ATTACHED_AUDIO) &&
 				new_state == TYPEC_UNATTACHED) {
 			mca_log_err("Charger plug out\n");
+			mca_log_err("Charger plug out, enable wls\n");
+			wls_set_property(WLS_PROP_ENABLE_CHARGE, 1);
+			wls_set_property(WLS_PROP_SWITCH_USB, 0);
+			wls_set_property(WLS_PROP_VUSB_INSERT,0);
 			typec_mode = POWER_SUPPLY_TYPEC_NONE;
 			handle_typec_pd_attach(mci, idx, ATTACH_TYPE_NONE);
 		}

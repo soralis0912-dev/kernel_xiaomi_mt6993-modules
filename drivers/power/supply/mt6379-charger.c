@@ -225,7 +225,7 @@ static const struct linear_range mt6379_charger_ranges[MT6379_RANGE_F_MAX] = {
 	LINEAR_RANGE_IDX(MT6379_RANGE_F_VREC, 100000, 0x0, 0x1, 100000),
 	LINEAR_RANGE_IDX(MT6379_RANGE_F_CV, 3900000, 0x0, 0x51, 10000),
 #if defined(CONFIG_TARGET_PRODUCT_WARHOL) || defined(CONFIG_TARGET_PRODUCT_PRAGUE)
-	LINEAR_RANGE_IDX(MT6379_RANGE_F_CC, 300000, 0x6, 0x28, 50000),
+	LINEAR_RANGE_IDX(MT6379_RANGE_F_CC, 300000, 0x6, 0x3C, 50000),
 #else
 	LINEAR_RANGE_IDX(MT6379_RANGE_F_CC, 300000, 0x6, 0x50, 50000),
 #endif
@@ -3073,16 +3073,8 @@ static bool mt6379_check_ramp_need_update(struct mt6379_charger_data *cdata, boo
 		ret = mt6379_charger_field_get(cdata, F_CHG_RAMP_UP_COMP, &val);
 		if (ret || val != 3)
 			return true;
-
-		ret = mt6379_charger_field_get(cdata, F_IEOC_FLOW_RB, &val);
-		if (ret || val != 0)
-			return true;
 	} else {
 		ret = mt6379_charger_field_get(cdata, F_CHG_RAMP_UP_COMP, &val);
-		if (ret || val != 1)
-			return true;
-
-		ret = mt6379_charger_field_get(cdata, F_IEOC_FLOW_RB, &val);
 		if (ret || val != 1)
 			return true;
 	}
@@ -3106,11 +3098,6 @@ static int mt6379_update_comp_ramp(struct mt6379_charger_data *cdata, bool hv)
 		if (ret)
 			dev_info(dev, "%s, Failed to set chg_ramp_up_comp to 400kOhm\n",
 				 __func__);
-
-		ret = mt6379_charger_field_set(cdata, F_IEOC_FLOW_RB, 1);
-		if (ret)
-			dev_info(dev, "%s, Failed to set fccm in eoc flow\n", __func__);
-
 		ret = mt6379_charger_field_get(cdata, F_CHG_RAMP_UP_COMP, &ramp_comp);
 		if (ret)
 			dev_info(dev, "%s, Failed to get chg_ramp_up_comp\n", __func__);
@@ -3133,11 +3120,6 @@ static int mt6379_update_comp_ramp(struct mt6379_charger_data *cdata, bool hv)
 		if (ret)
 			dev_info(dev, "%s, Failed to set chg_ramp_up_comp to 240kOhm\n",
 				 __func__);
-
-		ret = mt6379_charger_field_set(cdata, F_IEOC_FLOW_RB, 0);
-		if (ret)
-			dev_info(dev, "%s, Failed to set no fccm in eoc flow\n", __func__);
-
 		ret = mt6379_charger_field_get(cdata, F_CHG_RAMP_UP_COMP, &ramp_comp);
 		if (ret)
 			dev_info(dev, "%s, Failed to get chg_ramp_up_comp\n", __func__);
@@ -3679,11 +3661,6 @@ static void mt6379_charger_check_pwr_rdy(struct mt6379_charger_data *cdata)
 		ret = mt6379_charger_field_set(cdata, F_CHG_RAMP_UP_COMP, 3);
 		if (ret)
 			dev_info(dev, "%s, Failed to set chg_ramp_up_comp to 240kOhm\n", __func__);
-
-		ret = mt6379_charger_field_set(cdata, F_IEOC_FLOW_RB, 0);
-		if (ret)
-			dev_info(dev, "%s, Failed to set no fccm in eoc flow\n", __func__);
-
 		ret = mt6379_charger_field_get(cdata, F_CHG_RAMP_UP_COMP, &ramp_comp);
 		if (ret)
 			dev_info(dev, "%s, Failed to get chg_ramp_up_comp\n", __func__);

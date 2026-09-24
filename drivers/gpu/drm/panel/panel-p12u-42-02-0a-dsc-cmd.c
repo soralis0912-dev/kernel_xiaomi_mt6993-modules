@@ -32,7 +32,6 @@
 #endif
 #include <mtk_dsi.h>
 //#include "../mediatek/mediatek_v2/mi_disp/mi_panel_ext.h"
-//#include "mi_dsi_panel.h"
 #ifdef CONFIG_MTK_ROUND_CORNER_SUPPORT
 #include "../mediatek/mediatek_v2/mtk_corner_pattern/mtk_data_hw_roundedpattern.h"
 #endif
@@ -41,12 +40,11 @@
 //#include <uapi/drm/mi_disp.h>
 #include "mi_disp/mi_panel_ext.h"
 #include "mi_disp/mi_dsi_panel.h"
-#include "include/panel-p12-42-02-0a-dsc-cmd.h"
+#include "include/panel-p12u-42-02-0a-dsc-cmd.h"
 
 static char buildid_cmdline[4] = {0};
 static char bl_tb0[] = {0x51, 0x3, 0xff};
 static int current_fps = 120;
-extern unsigned int mipi_volt;
 
 #define SLEEP_IN_VIANO_KEEP_HBM_THRESHOLD 11000
 #define MAX_BRIGHTNESS_CLONE 	16383
@@ -70,9 +68,9 @@ static unsigned char panel_build_id = PANEL_BUILD_ID_MP;
 #define DBI_TEMP_OFF    0x00
 #define DBI_TEMP_OFFSET 0x80
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 //Novatek ASIC
-#include "V2/D2/vis_display.h"
+#include "vis_display.h"
 unsigned int nvt_get_lcm_id_42(void)
 {
 	return 0x00000042;
@@ -83,38 +81,17 @@ EXPORT_SYMBOL(nvt_get_lcm_id_42);
 static char oled_wp_cmdline[16] = {0};
 static char oled_lhbm_cmdline[90] = {0};
 static char panel_sn_cmdline[15] = {0};
-//static bool lhbm_w900_update_flag = true;
-//static bool lhbm_w110_update_flag = true;
-//static bool lhbm_g500_update_flag = true;
-//static bool lhbm_w900_readbackdone;
-//static bool lhbm_w110_readbackdone;
-//static bool lhbm_g500_readbackdone;
+static bool lhbm_w1300_update_flag = true;
+static bool lhbm_w250_update_flag = true;
+static bool lhbm_w1300_readbackdone;
+static bool lhbm_w250_readbackdone;
+
 struct LHBM_WHITEBUF {
-	unsigned char nit_700_80_250[6];
-	unsigned char nit_80_2_250[6];
-	unsigned char nit_1600_700_250[6];
-
-	unsigned char nit_700_80_1300_1000_1018_1005[6];
-	unsigned char nit_700_80_1300_996_1015_1005[6];
-	unsigned char nit_700_80_1300_995_1012_1003[6];
-	unsigned char nit_700_80_1300_993_1010_1000[6];
-	unsigned char nit_700_80_1300_990_1006_998[6];
-	unsigned char nit_700_80_1300_990_1003_998[6];
-	unsigned char nit_700_80_1300_990_1000_995[6];
-	unsigned char nit_700_80_1300_988_998_992[6];
-	unsigned char nit_700_80_1300_985_998_990[6];
-	unsigned char nit_700_80_1300_985_996_990[6];
-
-
-	unsigned char nit_80_2_1300[6];
-	unsigned char nit_1600_700_1300[6];
-	unsigned char nit_700_80_500_100[2];
-	unsigned char nit_700_80_500_101[2];
-	unsigned char nit_80_2_500[2];
-	unsigned char nit_1600_700_500[2];
+	unsigned char lhbm_1300[6];
+	unsigned char lhbm_250[6];
 };
+static struct LHBM_WHITEBUF lhbm_whitebuf;
 
-//static struct LHBM_WHITEBUF lhbm_whitebuf;
 enum lhbm_cmd_type {
 	TYPE_WHITE_1300 = 0,
 	TYPE_WHITE_250,
@@ -528,6 +505,13 @@ static int lcm_unprepare(struct drm_panel *panel)
 	if (!ctx->prepared)
 		return 0;
 
+	if (!dsi_cmd_v2_dbg[PANEL_INIT_DBG]) {
+		lcm_dcs_write_seq_static(ctx, 0x28);
+		msleep(10);
+		lcm_dcs_write_seq_static(ctx, 0x10);
+		msleep(120);
+	}
+
 	ctx->error = 0;
 	ctx->prepared = false;
 	ctx->crc_level = 0;
@@ -538,42 +522,6 @@ static int lcm_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-/*
- * Deinitialize the LCM panel.
- *
- * This function performs cleanup operations for the LCM panel when it's being
- * removed or when the driver is unloaded. It should release any resources
- * acquired during panel initialization.
- *
- * @panel: pointer to the drm_panel structure
- *
- * Returns: 0 on success, negative error code on failure
- */
-static int lcm_panel_deinit(struct drm_panel *panel)
-{
-	struct lcm *ctx = panel_to_lcm(panel);
-
-	pr_info("%s +\n", __func__);
-	if (!ctx->prepared)
-		return 0;
-
-	push_table(ctx, deinit_setting, ARRAY_SIZE(deinit_setting));
-
-	pr_info("%s -\n", __func__);
-	return 0;
-}
-
-/**
- * Deinitializes an LCM panel using version 2 protocol
- *
- * @param dsi_drv    Pointer to DSI driver data structure
- * @param panel      Pointer to DRM panel structure to deinitialize
- * @param handle     Handle for panel deinitialization context
- * @param cb         Callback function for DSI DDIC commands
- * @param cmd_opt    Pointer to DSI command options structure
- *
- * @return           Returns 0 on success, negative error code on failure
- */
 static int lcm_panel_deinit_v2(void *dsi_drv, struct drm_panel *panel, void *handle, mtk_dsi_ddic_cmd cb,
 			struct mtk_dsi_cmd_option *cmd_opt)
 {
@@ -588,9 +536,6 @@ static int lcm_panel_deinit_v2(void *dsi_drv, struct drm_panel *panel, void *han
 		pr_err("%s, error, panel is NULL\n", __func__);
 		return -1;
 	}
-
-	if (!cb)
-		return -1;
 
 	ctx = panel_to_lcm(panel);
 	if (ctx->error < 0) {
@@ -637,6 +582,8 @@ static void get_build_id(void) {
 
 static void lcm_panel_init(struct lcm *ctx)
 {
+	struct mipi_dsi_device *dsi = NULL;
+
 	pr_info("%s: +\n", __func__);
 	if (ctx->prepared) {
 		pr_info("%s: panel has been prepared, nothing to do!\n", __func__);
@@ -650,8 +597,7 @@ static void lcm_panel_init(struct lcm *ctx)
 			__func__, PTR_ERR(ctx->reset_gpio));
 		goto err;
 	}
-	gpiod_set_value(ctx->reset_gpio, 0);
-	udelay(11 * 1000);
+
 	gpiod_set_value(ctx->reset_gpio, 1);
 	udelay(2 * 1000);
 	gpiod_set_value(ctx->reset_gpio, 0);
@@ -660,15 +606,8 @@ static void lcm_panel_init(struct lcm *ctx)
 	udelay(11 * 1000);
 	devm_gpiod_put(ctx->dev, ctx->reset_gpio);
 
-	if (panel_build_id >= PANEL_BUILD_ID_P20) {
-		pr_info("%s, load init setting for P20\n", __func__);
-		push_table(ctx, init_setting_p20,
-			sizeof(init_setting_p20) / sizeof(struct LCM_setting_table));
-	} else {
-		pr_info("%s, load init setting for default\n", __func__);
-		push_table(ctx, init_setting,
-			sizeof(init_setting) / sizeof(struct LCM_setting_table));
-	}
+	push_table(ctx, init_setting,
+		sizeof(init_setting) / sizeof(struct LCM_setting_table));
 
 	/*if (!ctx->gir_status) {
 		pr_info("%s: gir state reload\n", __func__);
@@ -676,44 +615,46 @@ static void lcm_panel_init(struct lcm *ctx)
 				sizeof(gir_off_settings) / sizeof(struct LCM_setting_table));
 	}*/
 
-	if (bl_value > 0x22B) {
+	if (panel_build_id >= PANEL_BUILD_ID_P10) {
 		if (ctx->dynamic_fps == 120) {
-			push_table(ctx, mode_120hz_setting_high_bl,
-				sizeof(mode_120hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_120hz_setting_p10,
+				sizeof(mode_120hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else if (ctx->dynamic_fps == 60) {
-			push_table(ctx, mode_60hz_setting_high_bl,
-				sizeof(mode_60hz_setting_high_bl) / sizeof(struct LCM_setting_table));
-		} else if (ctx->dynamic_fps == 165) {
-			push_table(ctx, mode_165hz_setting_high_bl,
-				sizeof(mode_165hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_60hz_setting_p10,
+				sizeof(mode_60hz_setting_p10) / sizeof(struct LCM_setting_table));
+		} else if (ctx->dynamic_fps == 90) {
+			push_table(ctx, mode_90hz_setting_p10,
+				sizeof(mode_90hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else if (ctx->dynamic_fps == 144) {
-			push_table(ctx, mode_144hz_setting_high_bl,
-				sizeof(mode_144hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_144hz_setting_p10,
+				sizeof(mode_144hz_setting_p10) / sizeof(struct LCM_setting_table));
 		}
 	} else {
 		if (ctx->dynamic_fps == 120) {
-			push_table(ctx, mode_120hz_setting_low_bl,
-				sizeof(mode_120hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_120hz_setting,
+				sizeof(mode_120hz_setting) / sizeof(struct LCM_setting_table));
 		} else if (ctx->dynamic_fps == 60) {
-			push_table(ctx, mode_60hz_setting_low_bl,
-				sizeof(mode_60hz_setting_low_bl) / sizeof(struct LCM_setting_table));
-		} else if (ctx->dynamic_fps == 165) {
-			push_table(ctx, mode_165hz_setting_low_bl,
-				sizeof(mode_165hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_60hz_setting,
+				sizeof(mode_60hz_setting) / sizeof(struct LCM_setting_table));
+		} else if (ctx->dynamic_fps == 90) {
+			push_table(ctx, mode_90hz_setting,
+				sizeof(mode_90hz_setting) / sizeof(struct LCM_setting_table));
 		} else if (ctx->dynamic_fps == 144) {
-			push_table(ctx, mode_144hz_setting_low_bl,
-				sizeof(mode_144hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_144hz_setting,
+				sizeof(mode_144hz_setting) / sizeof(struct LCM_setting_table));
 		}
 	}
 
-	pr_info("%s, gray level:0x%x, fps:%d\n", __func__, ctx->gray_level, ctx->dynamic_fps);
-	if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
-		if (ctx->dynamic_fps == 60)
-			gray_3d_lut[0].para_list[1] = ctx->gray_level + DBI_TEMP_OFFSET;
-		else
-			gray_3d_lut[0].para_list[1] = ctx->gray_level;
-		push_table(ctx, gray_3d_lut,
-				sizeof(gray_3d_lut) / sizeof(struct LCM_setting_table));
+	if (panel_build_id >= PANEL_BUILD_ID_P01) {
+		pr_info("%s, gray level:0x%x, fps:%d\n", __func__, ctx->gray_level, ctx->dynamic_fps);
+		if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
+			if (ctx->dynamic_fps == 60)
+				gray_3d_lut[0].para_list[1] = ctx->gray_level + DBI_TEMP_OFFSET;
+			else
+				gray_3d_lut[0].para_list[1] = ctx->gray_level;
+			push_table(ctx, gray_3d_lut,
+					sizeof(gray_3d_lut) / sizeof(struct LCM_setting_table));
+		}
 	}
 
 	ctx->prepared = true;
@@ -724,37 +665,19 @@ err:
 	pr_info("%s: -\n", __func__);
 }
 
-/**
- * Initialize LCM panel using version 2 protocol
- *
- * @param dsi_drv: DSI driver instance
- * @param panel: DRM panel structure
- * @param handle: Handle for panel operations
- * @param cb: DSI DDIC command callback function
- * @param cmd_opt: DSI command options
- * @return: 0 on success, negative error code on failure
- */
 static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handle, mtk_dsi_ddic_cmd cb,
 			struct mtk_dsi_cmd_option *cmd_opt)
 {
 	struct lcm *ctx = NULL;
 	int i = 0;
 	struct mipi_dsi_device *dsi = NULL;
-	static int first_init_flag = 0;
-	static struct mipi_dsi_msg init_setting_msg[ARRAY_SIZE(init_setting_v2)] = { 0 };
-	static struct mipi_dsi_msg init_setting_p20_msg[ARRAY_SIZE(init_setting_p20_v2)] = { 0 };
-	/* for dbv <= 0x22B */
-	static struct mipi_dsi_msg fps_165hz_low_bl_msg[ARRAY_SIZE(mode_165hz_setting_low_bl_v2)] = { 0 };
-	/* for dbv > 0x22B */
-	static struct mipi_dsi_msg fps_165hz_high_bl_msg[ARRAY_SIZE(mode_165hz_setting_high_bl_v2)] = { 0 };
-	/* fps setting without demura */
-	static struct mipi_dsi_msg fps_60hz_no_demura_msg[ARRAY_SIZE(mode_60hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_120hz_no_demura_msg[ARRAY_SIZE(mode_120hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_144hz_no_demura_msg[ARRAY_SIZE(mode_144hz_setting_no_demura_v2)] = { 0 };
+	static int flag = 0;
+	static struct mipi_dsi_msg init_setting[ARRAY_SIZE(init_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_60hz[ARRAY_SIZE(mode_60hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_90hz[ARRAY_SIZE(mode_90hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_120hz[ARRAY_SIZE(mode_120hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_144hz[ARRAY_SIZE(mode_144hz_setting_v2)] = { 0 };
 	static struct mipi_dsi_msg gray_settings[ARRAY_SIZE(gray_3d_lut_v2)] = { 0 };
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
-	struct mtk_panel_ext *ext = find_panel_ext(panel);
-#endif
 
 	pr_info("%s: +\n", __func__);
 
@@ -762,9 +685,6 @@ static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handl
 		pr_err("%s, error, panel is NULL\n", __func__);
 		return -1;
 	}
-
-	if (!cb)
-		return -1;
 
 	ctx = panel_to_lcm(panel);
 	if (ctx->error < 0) {
@@ -780,51 +700,63 @@ static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handl
 		goto err;
 	}
 
-	gpiod_set_value(ctx->reset_gpio, 0);
-	udelay(11 * 1000);
 	gpiod_set_value(ctx->reset_gpio, 1);
-	udelay(2 * 1000);
+	udelay(1 * 1000);
 	gpiod_set_value(ctx->reset_gpio, 0);
-	udelay(2 * 1000);
+	udelay(1 * 1000);
 	gpiod_set_value(ctx->reset_gpio, 1);
 	udelay(11 * 1000);
 	devm_gpiod_put(ctx->dev, ctx->reset_gpio);
 
-	if (!first_init_flag) {
-		first_init_flag = 1;
-		/* for dbv <= 0x22B */
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_low_bl_v2); i++) {
-			fps_165hz_low_bl_msg[i].tx_len = mode_165hz_setting_low_bl_v2[i].count;
-			fps_165hz_low_bl_msg[i].tx_buf = mode_165hz_setting_low_bl_v2[i].para_list;
+	if (!flag) {
+		flag = 1;
+		if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_p10_v2); i++) {
+				fps_60hz[i].tx_len = mode_60hz_setting_p10_v2[i].count;
+				fps_60hz[i].tx_buf = mode_60hz_setting_p10_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_90hz_setting_p10_v2); i++) {
+				fps_90hz[i].tx_len = mode_90hz_setting_p10_v2[i].count;
+				fps_90hz[i].tx_buf = mode_90hz_setting_p10_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_p10_v2); i++) {
+				fps_120hz[i].tx_len = mode_120hz_setting_p10_v2[i].count;
+				fps_120hz[i].tx_buf = mode_120hz_setting_p10_v2[i].para_list;
+			}
+			if (panel_build_id >= PANEL_BUILD_ID_P11) {
+				for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_p11_v2); i++) {
+					fps_144hz[i].tx_len = mode_144hz_setting_p11_v2[i].count;
+					fps_144hz[i].tx_buf = mode_144hz_setting_p11_v2[i].para_list;
+				}
+			} else {
+				for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_p10_v2); i++) {
+					fps_144hz[i].tx_len = mode_144hz_setting_p10_v2[i].count;
+					fps_144hz[i].tx_buf = mode_144hz_setting_p10_v2[i].para_list;
+				}
+			}
+		} else {
+			for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_v2); i++) {
+				fps_60hz[i].tx_len = mode_60hz_setting_v2[i].count;
+				fps_60hz[i].tx_buf = mode_60hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_90hz_setting_v2); i++) {
+				fps_90hz[i].tx_len = mode_90hz_setting_v2[i].count;
+				fps_90hz[i].tx_buf = mode_90hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_v2); i++) {
+				fps_120hz[i].tx_len = mode_120hz_setting_v2[i].count;
+				fps_120hz[i].tx_buf = mode_120hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_v2); i++) {
+				fps_144hz[i].tx_len = mode_144hz_setting_v2[i].count;
+				fps_144hz[i].tx_buf = mode_144hz_setting_v2[i].para_list;
+			}
 		}
-		/* for dbv > 0x22B */
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_high_bl_v2); i++) {
-			fps_165hz_high_bl_msg[i].tx_len = mode_165hz_setting_high_bl_v2[i].count;
-			fps_165hz_high_bl_msg[i].tx_buf = mode_165hz_setting_high_bl_v2[i].para_list;
-		}
-		/* fps setting without demura */
-		for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_no_demura_v2); i++) {
-			fps_60hz_no_demura_msg[i].tx_len = mode_60hz_setting_no_demura_v2[i].count;
-			fps_60hz_no_demura_msg[i].tx_buf = mode_60hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_no_demura_v2); i++) {
-			fps_120hz_no_demura_msg[i].tx_len = mode_120hz_setting_no_demura_v2[i].count;
-			fps_120hz_no_demura_msg[i].tx_buf = mode_120hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_no_demura_v2); i++) {
-			fps_144hz_no_demura_msg[i].tx_len = mode_144hz_setting_no_demura_v2[i].count;
-			fps_144hz_no_demura_msg[i].tx_buf = mode_144hz_setting_no_demura_v2[i].para_list;
-		}
-		/* init setting */
+
 		for (i = 0; i < ARRAY_SIZE(init_setting_v2); i++) {
-			init_setting_msg[i].tx_len= init_setting_v2[i].count;
-			init_setting_msg[i].tx_buf = init_setting_v2[i].para_list;
+			init_setting[i].tx_len= init_setting_v2[i].count;
+			init_setting[i].tx_buf = init_setting_v2[i].para_list;
 		}
-		for (i = 0; i < ARRAY_SIZE(init_setting_p20_v2); i++) {
-			init_setting_p20_msg[i].tx_len= init_setting_p20_v2[i].count;
-			init_setting_p20_msg[i].tx_buf = init_setting_p20_v2[i].para_list;
-		}
-		/* gray setting */
 		for (i = 0; i < ARRAY_SIZE(gray_3d_lut_v2); i++) {
 			gray_settings[i].tx_len = gray_3d_lut_v2[i].count;
 			gray_settings[i].tx_buf = gray_3d_lut_v2[i].para_list;
@@ -837,58 +769,44 @@ static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handl
 		.rd_to_slot = 0,
 		.cmd_num = ARRAY_SIZE(init_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = init_setting_msg,
-	};
-
-	struct mtk_dsi_cmd_msg init_setting_p20_cmd = {
-		.is_rd = 0, /* 0:write 1:read */
-		.is_package = 0,
-		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(init_setting_p20_v2),
-		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = init_setting_p20_msg,
+		.cmd_msg = init_setting,
 	};
 
 	struct mtk_dsi_cmd_msg fps_60hz_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
 		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_60hz_setting_no_demura_v2),
+		.cmd_num = ARRAY_SIZE(mode_60hz_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = fps_60hz_no_demura_msg,
+		.cmd_msg = fps_60hz,
 	};
 
-	struct mtk_dsi_cmd_msg fps_165hz_cmd  = {
+	struct mtk_dsi_cmd_msg fps_90hz_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
 		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_165hz_setting_low_bl_v2),
+		.cmd_num = ARRAY_SIZE(mode_90hz_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = fps_165hz_low_bl_msg,
+		.cmd_msg = fps_90hz,
 	};
 
 	struct mtk_dsi_cmd_msg fps_120hz_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
 		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_120hz_setting_no_demura_v2),
+		.cmd_num = ARRAY_SIZE(mode_120hz_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = fps_120hz_no_demura_msg,
+		.cmd_msg = fps_120hz,
 	};
 
 	struct mtk_dsi_cmd_msg fps_144hz_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
 		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_144hz_setting_no_demura_v2),
+		.cmd_num = ARRAY_SIZE(mode_144hz_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = fps_144hz_no_demura_msg,
+		.cmd_msg = fps_144hz,
 	};
-
-	if (bl_value > 0x22B) {
-		fps_165hz_cmd.cmd_num = ARRAY_SIZE(mode_165hz_setting_high_bl_v2);
-		fps_165hz_cmd.cmd_msg = fps_165hz_high_bl_msg;
-	}
 
 	struct mtk_dsi_cmd_msg gray_settings_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
@@ -899,21 +817,15 @@ static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handl
 		.cmd_msg = gray_settings,
 	};
 
-	if (panel_build_id >= PANEL_BUILD_ID_P20) {
-		pr_info("%s, load init setting for P20\n", __func__);
-		cb(dsi_drv, handle, cmd_opt, &init_setting_p20_cmd);
-	} else {
-		pr_info("%s, load init setting for default\n", __func__);
-		cb(dsi_drv, handle, cmd_opt, &init_setting_cmd);
-	}
+	cb(dsi_drv, handle, cmd_opt, &init_setting_cmd);
 
-	if (ctx->dynamic_fps == MODE0_FPS) {
-		cb(dsi_drv, handle, cmd_opt, &fps_60hz_cmd);
-	} else if (ctx->dynamic_fps == MODE2_FPS) {
-		cb(dsi_drv, handle, cmd_opt, &fps_165hz_cmd);
-	} else if (ctx->dynamic_fps == MODE1_FPS) {
+	if (ctx->dynamic_fps == 120) {
 		cb(dsi_drv, handle, cmd_opt, &fps_120hz_cmd);
-	} else if (ctx->dynamic_fps == MODE3_FPS) {
+	} else if (ctx->dynamic_fps == 60) {
+		cb(dsi_drv, handle, cmd_opt, &fps_60hz_cmd);
+	} else if (ctx->dynamic_fps == 90) {
+		cb(dsi_drv, handle, cmd_opt, &fps_90hz_cmd);
+	} else if (ctx->dynamic_fps == 144) {
 		cb(dsi_drv, handle, cmd_opt, &fps_144hz_cmd);
 	}
 
@@ -935,7 +847,7 @@ static int lcm_panel_init_v2(void *dsi_drv, struct drm_panel *panel, void *handl
 	lcm_panel_get_data(ctx);
 #endif
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 	//Novatek ASIC Notify Data Rate
 	if (is_mi_dev_support_nova()) {
 		vis_dsi_rate_notify((ext->params)->data_rate * 1000000);
@@ -953,7 +865,7 @@ static int lcm_prepare(struct drm_panel *panel)
 	struct lcm *ctx = panel_to_lcm(panel);
 	int ret;
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 	struct mtk_panel_ext *ext = find_panel_ext(panel);
 #endif
 
@@ -980,7 +892,7 @@ static int lcm_prepare(struct drm_panel *panel)
 		lcm_panel_get_data(ctx);
 #endif
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		//Novatek ASIC Notify Data Rate
 		if (is_mi_dev_support_nova()) {
 			vis_dsi_rate_notify((ext->params)->data_rate * 1000000);
@@ -1053,8 +965,8 @@ static const struct drm_display_mode default_mode = {
 	.vtotal = FRAME_HEIGHT + MODE0_VFP + MODE0_VSA + MODE0_VBP,
 };
 
-static const struct drm_display_mode performence_mode_165 = {
-	.clock = 679027,
+static const struct drm_display_mode middle_mode = {
+	.clock = 370378,
 	.hdisplay = FRAME_WIDTH,
 	.hsync_start = FRAME_WIDTH + MODE2_HFP,
 	.hsync_end = FRAME_WIDTH + MODE2_HFP + MODE2_HSA,
@@ -1140,10 +1052,10 @@ static struct mtk_panel_params ext_params = {
 		.rc_tgt_offset_lo = DSC_RC_TGT_OFFSET_LO,
 		.ext_pps_cfg = {
 			.enable = 1,
-			.rc_buf_thresh = p12_42_dphy_rc_buf_thresh,
-			.range_min_qp = p12_42_dphy_range_min_qp,
-			.range_max_qp = p12_42_dphy_range_max_qp,
-			.range_bpg_ofs = p12_42_dphy_range_bpg_ofs,
+			.rc_buf_thresh = p12u_42_dphy_rc_buf_thresh,
+			.range_min_qp = p12u_42_dphy_range_min_qp,
+			.range_max_qp = p12u_42_dphy_range_max_qp,
+			.range_bpg_ofs = p12u_42_dphy_range_bpg_ofs,
 			},
 		},
 	.data_rate = DATA_RATE1,
@@ -1161,10 +1073,10 @@ static struct mtk_panel_params ext_params = {
 	.physical_height_um = PHYSICAL_HEIGHT,
 	.real_te_duration = 16666,
 	.skip_vblank = 1,
-	//.SilkyBrightnessDelay = 3000,
+	.output_valid_us = 55,
 };
 
-static struct mtk_panel_params ext_params_165hz = {
+static struct mtk_panel_params ext_params_90hz = {
 	.pll_clk = DATA_RATE2 / 2,
 	.cust_esd_check = 0,
 	.esd_check_enable = 0,
@@ -1214,10 +1126,10 @@ static struct mtk_panel_params ext_params_165hz = {
 		.rc_tgt_offset_lo = DSC_RC_TGT_OFFSET_LO,
 		.ext_pps_cfg = {
 			.enable = 1,
-			.rc_buf_thresh = p12_42_dphy_rc_buf_thresh,
-			.range_min_qp = p12_42_dphy_range_min_qp,
-			.range_max_qp = p12_42_dphy_range_max_qp,
-			.range_bpg_ofs = p12_42_dphy_range_bpg_ofs,
+			.rc_buf_thresh = p12u_42_dphy_rc_buf_thresh,
+			.range_min_qp = p12u_42_dphy_range_min_qp,
+			.range_max_qp = p12u_42_dphy_range_max_qp,
+			.range_bpg_ofs = p12u_42_dphy_range_bpg_ofs,
 			},
 		},
 	.data_rate = DATA_RATE2,
@@ -1234,8 +1146,9 @@ static struct mtk_panel_params ext_params_165hz = {
 #endif
 	.physical_width_um = PHYSICAL_WIDTH,
 	.physical_height_um = PHYSICAL_HEIGHT,
-	.real_te_duration = 6060,
+	.real_te_duration = 11111,
 	.skip_vblank = 1,
+	.output_valid_us = 55,
 };
 
 static struct mtk_panel_params ext_params_120hz = {
@@ -1288,10 +1201,10 @@ static struct mtk_panel_params ext_params_120hz = {
 		.rc_tgt_offset_lo = DSC_RC_TGT_OFFSET_LO,
 		.ext_pps_cfg = {
 			.enable = 1,
-			.rc_buf_thresh = p12_42_dphy_rc_buf_thresh,
-			.range_min_qp = p12_42_dphy_range_min_qp,
-			.range_max_qp = p12_42_dphy_range_max_qp,
-			.range_bpg_ofs = p12_42_dphy_range_bpg_ofs,
+			.rc_buf_thresh = p12u_42_dphy_rc_buf_thresh,
+			.range_min_qp = p12u_42_dphy_range_min_qp,
+			.range_max_qp = p12u_42_dphy_range_max_qp,
+			.range_bpg_ofs = p12u_42_dphy_range_bpg_ofs,
 			},
 		},
 	.data_rate = DATA_RATE1,
@@ -1309,6 +1222,7 @@ static struct mtk_panel_params ext_params_120hz = {
 	.physical_height_um = PHYSICAL_HEIGHT,
 	.real_te_duration = 8333,
 	.skip_vblank = 1,
+	.output_valid_us = 55,
 };
 
 static struct mtk_panel_params ext_params_144hz = {
@@ -1361,10 +1275,10 @@ static struct mtk_panel_params ext_params_144hz = {
 		.rc_tgt_offset_lo = DSC_RC_TGT_OFFSET_LO,
 		.ext_pps_cfg = {
 			.enable = 1,
-			.rc_buf_thresh = p12_42_dphy_rc_buf_thresh,
-			.range_min_qp = p12_42_dphy_range_min_qp,
-			.range_max_qp = p12_42_dphy_range_max_qp,
-			.range_bpg_ofs = p12_42_dphy_range_bpg_ofs,
+			.rc_buf_thresh = p12u_42_dphy_rc_buf_thresh,
+			.range_min_qp = p12u_42_dphy_range_min_qp,
+			.range_max_qp = p12u_42_dphy_range_max_qp,
+			.range_bpg_ofs = p12u_42_dphy_range_bpg_ofs,
 			},
 		},
 	.data_rate = DATA_RATE3,
@@ -1382,6 +1296,7 @@ static struct mtk_panel_params ext_params_144hz = {
 	.physical_height_um = PHYSICAL_HEIGHT,
 	.real_te_duration = 6944,
 	.skip_vblank = 1,
+	.output_valid_us = 55,
 };
 
 struct drm_display_mode *get_mode_by_id(struct drm_connector *connector,
@@ -1412,7 +1327,7 @@ static int mtk_panel_ext_param_get(struct drm_panel *panel,
 	if (dst_fps == MODE0_FPS)
 		*ext_param = &ext_params;
 	else if (dst_fps == MODE2_FPS)
-		*ext_param = &ext_params_165hz;
+		*ext_param = &ext_params_90hz;
 	else if (dst_fps == MODE1_FPS)
 		*ext_param = &ext_params_120hz;
 	else if (dst_fps == MODE3_FPS)
@@ -1441,7 +1356,7 @@ static int mtk_panel_ext_param_set(struct drm_panel *panel,
 	if (dst_fps == MODE0_FPS)
 		ext->params = &ext_params;
 	else if (dst_fps == MODE2_FPS)
-		ext->params = &ext_params_165hz;
+		ext->params = &ext_params_90hz;
 	else if (dst_fps == MODE1_FPS)
 		ext->params = &ext_params_120hz;
 	else if (dst_fps == MODE3_FPS)
@@ -1535,14 +1450,14 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 	char bl_tb[] = {0x51, 0x07, 0xff};
 	/*  VIANO voltage setting */
 	char backlight_off_tb[] = {0xA9,0x02,0x01,0xBA,0x09,0x09,0xAB,0x02,0x01,0xBA,0x0F,
-							   0x0F,0xCC,0x02,0x01,0xBA,0x27,0x27,0xAB,0x02,0x01,0xBA,
-							   0x2D,0x2D,0xCC,0x01,0x00,0x51,0x00,0x01,0x00,0x00};
+					0x0F,0xCC,0x02,0x01,0xBA,0x27,0x27,0xAB,0x02,0x01,0xBA,
+					0x2D,0x2D,0xCC,0x01,0x00,0x51,0x00,0x01,0x00,0x00};
 	struct mtk_dsi *mtk_dsi = (struct mtk_dsi *)dsi;
 	if (!mtk_dsi || !mtk_dsi->panel) {
 		pr_err("dsi is null\n");
 		return -1;
 	}
-	//ctx = panel_to_lcm(mtk_dsi->panel);
+	ctx = panel_to_lcm(mtk_dsi->panel);
 
 	if (level) {
 		bl_tb0[1] = (level >> 8) & 0xFF;
@@ -1563,6 +1478,10 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 		return 0;
 	}
 
+	//if (level != 0){
+		//panel_set_peak_hdr_status(mtk_dsi,cb,handle,level);
+	//}
+
 	pr_info("%s %d %d %d, last:%d\n", __func__, level, bl_tb[1], bl_tb[2], mtk_dsi->mi_cfg.last_bl_level);
 
 	if (level == 0 && mtk_dsi->mi_cfg.last_bl_level > SLEEP_IN_VIANO_KEEP_HBM_THRESHOLD) {
@@ -1571,7 +1490,7 @@ static int lcm_setbacklight_cmdq(void *dsi, dcs_write_gce cb,
 		cb(dsi, handle, bl_tb, ARRAY_SIZE(bl_tb));
 	}
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 	if (is_mi_dev_support_nova()) {
 		if (level == 0) {
 			vis_dsi_cmd_send(EN_DSI_CMD_BEFORE_SET_BACKLIGHT_OFF, 0 , NULL);
@@ -1597,8 +1516,8 @@ static int lcm_setbacklight_cmdq_v2(void *dsi, mtk_dsi_ddic_cmd cb,
 	/*  VIANO voltage setting */
 	struct LCM_setting_table_v2 backlight_off_tb[] = {
 		{0x32, {0xA9,0x02,0x01,0xBA,0x09,0x09,0xAB,0x02,0x01,0xBA,0x0F,
-				0x0F,0xCC,0x02,0x01,0xBA,0x27,0x27,0xAB,0x02,0x01,0xBA,
-				0x2D,0x2D,0xCC,0x01,0x00,0x51,0x00,0x01,0x00,0x00}},
+			0x0F,0xCC,0x02,0x01,0xBA,0x27,0x27,0xAB,0x02,0x01,0xBA,
+			0x2D,0x2D,0xCC,0x01,0x00,0x51,0x00,0x01,0x00,0x00}},
 	};
 	struct mtk_dsi *mtk_dsi = (struct mtk_dsi *)dsi;
 	if (!mtk_dsi || !mtk_dsi->panel) {
@@ -1633,8 +1552,8 @@ static int lcm_setbacklight_cmdq_v2(void *dsi, mtk_dsi_ddic_cmd cb,
 		cmd_bl_level_msg.tx_buf = cmd_bl_level[0].para_list;
 		cmd_bl_level_msg.tx_len = cmd_bl_level[0].count;
 	}
-	cmd_bl_level_msg.flags |= MIPI_DSI_MSG_USE_LPM;
 
+	cmd_bl_level_msg.flags |= MIPI_DSI_MSG_USE_LPM;
 	struct mtk_dsi_cmd_msg cmd_bl_level_tmp = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
@@ -1652,18 +1571,7 @@ static int lcm_setbacklight_cmdq_v2(void *dsi, mtk_dsi_ddic_cmd cb,
 
 	cb(dsi, handle, cmd_opt, &cmd_bl_level_tmp);
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
-	if (is_mi_dev_support_nova()) {
-		if (level == 0) {
-			vis_dsi_cmd_send(EN_DSI_CMD_BEFORE_SET_BACKLIGHT_OFF, 0 , NULL);
-		} else {
-			vis_dsi_cmd_send(EN_DSI_CMD_BEFORE_SET_BACKLIGHT_ON, 0 , NULL);
-		}
-	}
-#endif
-
 	mtk_dsi->mi_cfg.last_bl_level = level;
-	bl_value = level;
 
 	return 0;
 }
@@ -1737,23 +1645,26 @@ static void mode_switch_to_144(struct drm_panel *panel,
 	pr_info("%s state = %d\n", __func__, stage);
 
 	if (stage == BEFORE_DSI_POWERDOWN) {
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(144, 0);
 			}
 		}
 #endif
-		if (bl_value > 0x22B) {
-			push_table(ctx, mode_144hz_setting_high_bl,
-				sizeof(mode_144hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+		if (panel_build_id >= PANEL_BUILD_ID_P11) {
+			push_table(ctx, mode_144hz_setting_p11,
+				sizeof(mode_144hz_setting_p11) / sizeof(struct LCM_setting_table));
+		} else if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			push_table(ctx, mode_144hz_setting_p10,
+				sizeof(mode_144hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else {
-			push_table(ctx, mode_144hz_setting_low_bl,
-				sizeof(mode_144hz_setting_low_bl) / sizeof(struct LCM_setting_table));			
+			push_table(ctx, mode_144hz_setting,
+				sizeof(mode_144hz_setting) / sizeof(struct LCM_setting_table));
 		}
 
 		ctx->dynamic_fps = 144;
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(144, 1);
@@ -1770,23 +1681,23 @@ static void mode_switch_to_120(struct drm_panel *panel,
 
 	pr_info("%s state = %d\n", __func__, stage);
 	if (stage == BEFORE_DSI_POWERDOWN) {
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(120, 0);
 			}
 		}
 #endif
-		if (bl_value > 0x22B) {
-			push_table(ctx, mode_120hz_setting_high_bl,
-				sizeof(mode_120hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+		if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			push_table(ctx, mode_120hz_setting_p10,
+				sizeof(mode_120hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else {
-			push_table(ctx, mode_120hz_setting_low_bl,
-				sizeof(mode_120hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_120hz_setting,
+				sizeof(mode_120hz_setting) / sizeof(struct LCM_setting_table));
 		}
 
 		ctx->dynamic_fps = 120;
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(120, 1);
@@ -1796,33 +1707,33 @@ static void mode_switch_to_120(struct drm_panel *panel,
 	}
 }
 
-static void mode_switch_to_165(struct drm_panel *panel,
+static void mode_switch_to_90(struct drm_panel *panel,
 	enum MTK_PANEL_MODE_SWITCH_STAGE stage)
 {
 	struct lcm *ctx = panel_to_lcm(panel);
 
 	pr_info("%s state = %d\n", __func__, stage);
 	if (stage == BEFORE_DSI_POWERDOWN) {
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
-				vis_dsi_fps_switching_cmd(165, 0);
+				vis_dsi_fps_switching_cmd(90, 0);
 			}
 		}
 #endif
-		if (bl_value > 0x22B) {
-			push_table(ctx, mode_165hz_setting_high_bl,
-				sizeof(mode_165hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+		if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			push_table(ctx, mode_90hz_setting_p10,
+			sizeof(mode_90hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else {
-			push_table(ctx, mode_165hz_setting_low_bl,
-				sizeof(mode_165hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_90hz_setting,
+			sizeof(mode_90hz_setting) / sizeof(struct LCM_setting_table));
 		}
 
-		ctx->dynamic_fps = 165;
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+		ctx->dynamic_fps = 90;
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
-				vis_dsi_fps_switching_cmd(165, 1);
+				vis_dsi_fps_switching_cmd(90, 1);
 			}
 		}
 #endif
@@ -1836,23 +1747,23 @@ static void mode_switch_to_60(struct drm_panel *panel,
 
 	pr_info("%s state = %d\n", __func__, stage);
 	if (stage == BEFORE_DSI_POWERDOWN) {
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(60, 0);
 			}
 		}
 #endif
-		if (bl_value > 0x22B) {
-			push_table(ctx, mode_60hz_setting_high_bl,
-				sizeof(mode_60hz_setting_high_bl) / sizeof(struct LCM_setting_table));
+		if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			push_table(ctx, mode_60hz_setting_p10,
+			sizeof(mode_60hz_setting_p10) / sizeof(struct LCM_setting_table));
 		} else {
-			push_table(ctx, mode_60hz_setting_low_bl,
-				sizeof(mode_60hz_setting_low_bl) / sizeof(struct LCM_setting_table));
+			push_table(ctx, mode_60hz_setting,
+			sizeof(mode_60hz_setting) / sizeof(struct LCM_setting_table));
 		}
 
 		ctx->dynamic_fps = 60;
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		if(is_mi_dev_support_nova()) {
 			if(vis_display_get_CurrentUsecaseID() != 0) {
 				vis_dsi_fps_switching_cmd(60, 1);
@@ -1897,7 +1808,7 @@ static int mode_switch(struct drm_panel *panel,
 		if (dst_fps == MODE0_FPS)
 			mode_switch_to_60(panel, stage);
 		else if (dst_fps == MODE2_FPS)
-			mode_switch_to_165(panel, stage);
+			mode_switch_to_90(panel, stage);
 		else if (dst_fps == MODE1_FPS)
 			mode_switch_to_120(panel, stage);
 		else if (dst_fps == MODE3_FPS)
@@ -1905,22 +1816,23 @@ static int mode_switch(struct drm_panel *panel,
 		else
 			ret = 1;
 
-		if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
-			if (dst_fps == MODE0_FPS)
-				gray_3d_lut[0].para_list[1] = ctx->gray_level + DBI_TEMP_OFFSET;
-			else if (cur_fps == MODE0_FPS)
-				gray_3d_lut[0].para_list[1] = ctx->gray_level;
-			push_table(ctx, gray_3d_lut,
-					sizeof(gray_3d_lut) / sizeof(struct LCM_setting_table));
+		if (panel_build_id >= PANEL_BUILD_ID_P01) {
+			if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
+				if (dst_fps == MODE0_FPS)
+					gray_3d_lut[0].para_list[1] = ctx->gray_level + DBI_TEMP_OFFSET;
+				else if (cur_fps == MODE0_FPS)
+					gray_3d_lut[0].para_list[1] = ctx->gray_level;
+				push_table(ctx, gray_3d_lut,
+						sizeof(gray_3d_lut) / sizeof(struct LCM_setting_table));
+			}
 		}
-
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 		//Novatek ASIC Notify fps
 		if (is_mi_dev_support_nova()) {
 			if (dst_fps == MODE0_FPS)
 				vis_fps_notify(60);
 			else if (dst_fps == MODE2_FPS)
-				vis_fps_notify(165);
+				vis_fps_notify(90);
 			else if (dst_fps == MODE1_FPS)
 				vis_fps_notify(120);
 			else if (dst_fps == MODE3_FPS)
@@ -1943,21 +1855,11 @@ static int mode_switch_v2(void *dsi_drv, struct drm_panel *panel, void *handle,
 	struct drm_display_mode *m_dst = get_mode_by_id(connector, dst_mode);
 	struct drm_display_mode *m_cur = get_mode_by_id(connector, cur_mode);
 	struct lcm *ctx = panel_to_lcm(panel);
-	static int mode_switch_flag = 0;
-	/* for dbv <= 0x22B */
-	static struct mipi_dsi_msg fps_60hz_low_bl[ARRAY_SIZE(mode_60hz_setting_low_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_165hz_low_bl[ARRAY_SIZE(mode_165hz_setting_low_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_120hz_low_bl[ARRAY_SIZE(mode_120hz_setting_low_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_144hz_low_bl[ARRAY_SIZE(mode_144hz_setting_low_bl_v2)] = { 0 };
-	/* for dbv > 0x22B */
-	static struct mipi_dsi_msg fps_60hz_high_bl[ARRAY_SIZE(mode_60hz_setting_high_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_165hz_high_bl[ARRAY_SIZE(mode_165hz_setting_high_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_120hz_high_bl[ARRAY_SIZE(mode_120hz_setting_high_bl_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_144hz_high_bl[ARRAY_SIZE(mode_144hz_setting_high_bl_v2)] = { 0 };
-	/* fps setting without demura */
-	static struct mipi_dsi_msg fps_60hz_no_demura_msg[ARRAY_SIZE(mode_60hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_120hz_no_demura_msg[ARRAY_SIZE(mode_120hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg fps_144hz_no_demura_msg[ARRAY_SIZE(mode_144hz_setting_no_demura_v2)] = { 0 };
+	static int flag = 0;
+	static struct mipi_dsi_msg fps_60hz[ARRAY_SIZE(mode_60hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_90hz[ARRAY_SIZE(mode_90hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_120hz[ARRAY_SIZE(mode_120hz_setting_v2)] = { 0 };
+	static struct mipi_dsi_msg fps_144hz[ARRAY_SIZE(mode_144hz_setting_v2)] = { 0 };
 	static struct mipi_dsi_msg gray_settings[ARRAY_SIZE(gray_3d_lut_v2)] = { 0 };
 
 	if (cur_mode == dst_mode) {
@@ -1976,58 +1878,54 @@ static int mode_switch_v2(void *dsi_drv, struct drm_panel *panel, void *handle,
 	isFpsChange = ((dst_fps == cur_fps) && (dst_fps != -EINVAL)
 			&& (cur_fps != -EINVAL)) ? false : true;
 
-	pr_info("%s isFpsChange = %d, stage = %d, gray level:0x%x\n", __func__, isFpsChange, stage, ctx->gray_level);
+	pr_info("%s isFpsChange = %d, gray level:0x%x\n", __func__, isFpsChange, ctx->gray_level);
 	pr_info("%s dst_mode vrefresh = %d, cur_mode vrefresh = %d\n", __func__, dst_fps, cur_fps);
-	if (!mode_switch_flag) {
-		mode_switch_flag = 1;
-		/* for dbv <= 0x22B */
-		for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_low_bl_v2); i++) {
-			fps_60hz_low_bl[i].tx_len = mode_60hz_setting_low_bl_v2[i].count;
-			fps_60hz_low_bl[i].tx_buf = mode_60hz_setting_low_bl_v2[i].para_list;
+	if (!flag) {
+		flag = 1;
+
+		if (panel_build_id >= PANEL_BUILD_ID_P10) {
+			for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_p10_v2); i++) {
+				fps_60hz[i].tx_len = mode_60hz_setting_p10_v2[i].count;
+				fps_60hz[i].tx_buf = mode_60hz_setting_p10_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_90hz_setting_p10_v2); i++) {
+				fps_90hz[i].tx_len = mode_90hz_setting_p10_v2[i].count;
+				fps_90hz[i].tx_buf = mode_90hz_setting_p10_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_p10_v2); i++) {
+				fps_120hz[i].tx_len = mode_120hz_setting_p10_v2[i].count;
+				fps_120hz[i].tx_buf = mode_120hz_setting_p10_v2[i].para_list;
+			}
+			if (panel_build_id >= PANEL_BUILD_ID_P11) {
+				for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_p11_v2); i++) {
+					fps_144hz[i].tx_len = mode_144hz_setting_p11_v2[i].count;
+					fps_144hz[i].tx_buf = mode_144hz_setting_p11_v2[i].para_list;
+				}
+			} else {
+				for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_p10_v2); i++) {
+					fps_144hz[i].tx_len = mode_144hz_setting_p10_v2[i].count;
+					fps_144hz[i].tx_buf = mode_144hz_setting_p10_v2[i].para_list;
+				}
+			}
+		} else {
+			for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_v2); i++) {
+				fps_60hz[i].tx_len = mode_60hz_setting_v2[i].count;
+				fps_60hz[i].tx_buf = mode_60hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_90hz_setting_v2); i++) {
+				fps_90hz[i].tx_len = mode_90hz_setting_v2[i].count;
+				fps_90hz[i].tx_buf = mode_90hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_v2); i++) {
+				fps_120hz[i].tx_len = mode_120hz_setting_v2[i].count;
+				fps_120hz[i].tx_buf = mode_120hz_setting_v2[i].para_list;
+			}
+			for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_v2); i++) {
+				fps_144hz[i].tx_len = mode_144hz_setting_v2[i].count;
+				fps_144hz[i].tx_buf = mode_144hz_setting_v2[i].para_list;
+			}
 		}
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_low_bl_v2); i++) {
-			fps_165hz_low_bl[i].tx_len = mode_165hz_setting_low_bl_v2[i].count;
-			fps_165hz_low_bl[i].tx_buf = mode_165hz_setting_low_bl_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_low_bl_v2); i++) {
-			fps_120hz_low_bl[i].tx_len = mode_120hz_setting_low_bl_v2[i].count;
-			fps_120hz_low_bl[i].tx_buf = mode_120hz_setting_low_bl_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_low_bl_v2); i++) {
-			fps_144hz_low_bl[i].tx_len = mode_144hz_setting_low_bl_v2[i].count;
-			fps_144hz_low_bl[i].tx_buf = mode_144hz_setting_low_bl_v2[i].para_list;
-		}
-		/* for dbv > 0x22B */
-		for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_high_bl_v2); i++) {
-			fps_60hz_high_bl[i].tx_len = mode_60hz_setting_high_bl_v2[i].count;
-			fps_60hz_high_bl[i].tx_buf = mode_60hz_setting_high_bl_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_high_bl_v2); i++) {
-			fps_165hz_high_bl[i].tx_len = mode_165hz_setting_high_bl_v2[i].count;
-			fps_165hz_high_bl[i].tx_buf = mode_165hz_setting_high_bl_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_high_bl_v2); i++) {
-			fps_120hz_high_bl[i].tx_len = mode_120hz_setting_high_bl_v2[i].count;
-			fps_120hz_high_bl[i].tx_buf = mode_120hz_setting_high_bl_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_high_bl_v2); i++) {
-			fps_144hz_high_bl[i].tx_len = mode_144hz_setting_high_bl_v2[i].count;
-			fps_144hz_high_bl[i].tx_buf = mode_144hz_setting_high_bl_v2[i].para_list;
-		}
-		/* fps setting without demura */
-		for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_no_demura_v2); i++) {
-			fps_60hz_no_demura_msg[i].tx_len = mode_60hz_setting_no_demura_v2[i].count;
-			fps_60hz_no_demura_msg[i].tx_buf = mode_60hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_no_demura_v2); i++) {
-			fps_120hz_no_demura_msg[i].tx_len = mode_120hz_setting_no_demura_v2[i].count;
-			fps_120hz_no_demura_msg[i].tx_buf = mode_120hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_no_demura_v2); i++) {
-			fps_144hz_no_demura_msg[i].tx_len = mode_144hz_setting_no_demura_v2[i].count;
-			fps_144hz_no_demura_msg[i].tx_buf = mode_144hz_setting_no_demura_v2[i].para_list;
-		}
-		/* gray setting */
+
 		for (i = 0; i < ARRAY_SIZE(gray_3d_lut_v2); i++) {
 			gray_settings[i].tx_len = gray_3d_lut_v2[i].count;
 			gray_settings[i].tx_buf = gray_3d_lut_v2[i].para_list;
@@ -2037,154 +1935,69 @@ static int mode_switch_v2(void *dsi_drv, struct drm_panel *panel, void *handle,
 	if (isFpsChange) {
 		struct mtk_dsi_cmd_msg fps_60hz_cmd = {
 			.is_rd = 0, /* 0:write 1:read */
-			.is_package = 0,
+			.is_package = 1,
 			.rd_to_slot = 0,
-			.cmd_num = ARRAY_SIZE(mode_60hz_setting_low_bl_v2),
+			.cmd_num = ARRAY_SIZE(mode_60hz_setting_v2),
 			.transfer_mode = PACKET_HS_MODE,
-			.cmd_msg = fps_60hz_low_bl,
+			.cmd_msg = fps_60hz,
 		};
 
-		struct mtk_dsi_cmd_msg fps_165hz_cmd = {
+		struct mtk_dsi_cmd_msg fps_90hz_cmd = {
 			.is_rd = 0, /* 0:write 1:read */
-			.is_package = 0,
+			.is_package = 1,
 			.rd_to_slot = 0,
-			.cmd_num = ARRAY_SIZE(mode_165hz_setting_low_bl_v2),
+			.cmd_num = ARRAY_SIZE(mode_90hz_setting_v2),
 			.transfer_mode = PACKET_HS_MODE,
-			.cmd_msg = fps_165hz_low_bl,
+			.cmd_msg = fps_90hz,
 		};
 
 		struct mtk_dsi_cmd_msg fps_120hz_cmd = {
 			.is_rd = 0, /* 0:write 1:read */
-			.is_package = 0,
+			.is_package = 1,
 			.rd_to_slot = 0,
-			.cmd_num = ARRAY_SIZE(mode_120hz_setting_low_bl_v2),
+			.cmd_num = ARRAY_SIZE(mode_120hz_setting_v2),
 			.transfer_mode = PACKET_HS_MODE,
-			.cmd_msg = fps_120hz_low_bl,
+			.cmd_msg = fps_120hz,
 		};
 
 		struct mtk_dsi_cmd_msg fps_144hz_cmd = {
 			.is_rd = 0, /* 0:write 1:read */
-			.is_package = 0,
+			.is_package = 1,
 			.rd_to_slot = 0,
-			.cmd_num = ARRAY_SIZE(mode_144hz_setting_low_bl_v2),
+			.cmd_num = ARRAY_SIZE(mode_144hz_setting_v2),
 			.transfer_mode = PACKET_HS_MODE,
-			.cmd_msg = fps_144hz_low_bl,
+			.cmd_msg = fps_144hz,
 		};
-
-		if (bl_value > 0x22B) {
-			fps_60hz_cmd.cmd_msg = fps_60hz_high_bl;
-			fps_165hz_cmd.cmd_msg = fps_165hz_high_bl;
-			fps_120hz_cmd.cmd_msg = fps_120hz_high_bl;
-			fps_144hz_cmd.cmd_msg = fps_144hz_high_bl;
-		}
 
 		struct mtk_dsi_cmd_msg gray_settings_cmd = {
 			.is_rd = 0, /* 0:write 1:read */
-			.is_package = 0,
+			.is_package = 1,
 			.rd_to_slot = 0,
 			.cmd_num = ARRAY_SIZE(gray_3d_lut_v2),
 			.transfer_mode = PACKET_HS_MODE,
 			.cmd_msg = gray_settings,
 		};
 
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
-		if(is_mi_dev_support_nova()) {
-			if(vis_display_get_CurrentUsecaseID() != 0) {
-				vis_dsi_fps_switching_cmd(dst_fps, 0);
-			}
-		}
-#endif
-		/* non_165Hz <-> 165 need to send demura settings and add 2 frames delay to fix demura fail issue */
-		if (dst_fps == MODE0_FPS) {
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 60Hz */
-				mode_60hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 25;
-				mode_60hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 25;
-			} else { /* non_165Hz -> 60Hz */
-				fps_60hz_cmd.cmd_num = ARRAY_SIZE(mode_60hz_setting_no_demura_v2),
-				fps_60hz_cmd.cmd_msg = fps_60hz_no_demura_msg;
-			}
+		if (dst_fps == MODE0_FPS)
 			cb(dsi_drv, handle, cmd_opt, &fps_60hz_cmd);
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 60Hz */
-				mode_60hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-				mode_60hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-			}
-		} else if (dst_fps == MODE2_FPS) {
-			if (cur_fps == MODE0_FPS) { /* 60Hz -> 165Hz */
-				mode_165hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 25;
-				mode_165hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 25;
-			}
-			if (cur_fps == MODE1_FPS) {  /* 120Hz -> 165Hz */
-				mode_165hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 17;
-				mode_165hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 17;
-			}
-			if (cur_fps == MODE3_FPS) {  /* 144Hz -> 165Hz */
-				mode_165hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 15;
-				mode_165hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 15;
-			}
-			cb(dsi_drv, handle, cmd_opt, &fps_165hz_cmd);
-			/* non_165Hz -> 165Hz */
-			if (cur_fps == MODE0_FPS || cur_fps == MODE1_FPS || cur_fps == MODE3_FPS) {
-				mode_165hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-				mode_165hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-			}
-		} else if (dst_fps == MODE1_FPS) {
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 120Hz */
-				mode_120hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 17;
-				mode_120hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 17;
-			} else { /* non_165Hz -> 120Hz */
-				fps_120hz_cmd.cmd_num = ARRAY_SIZE(mode_120hz_setting_no_demura_v2),
-				fps_120hz_cmd.cmd_msg = fps_120hz_no_demura_msg;
-			}
+		else if (dst_fps == MODE2_FPS)
+			cb(dsi_drv, handle, cmd_opt, &fps_90hz_cmd);
+		else if (dst_fps == MODE1_FPS)
 			cb(dsi_drv, handle, cmd_opt, &fps_120hz_cmd);
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 120Hz */
-				mode_120hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-				mode_120hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-			}
-		} else if (dst_fps == MODE3_FPS) {
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 144Hz */
-				mode_144hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 15;
-				mode_144hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 15;
-			} else { /* non_165Hz -> 144Hz */
-				fps_144hz_cmd.cmd_num = ARRAY_SIZE(mode_144hz_setting_no_demura_v2),
-				fps_144hz_cmd.cmd_msg = fps_144hz_no_demura_msg;
-			}
+		else if (dst_fps == MODE3_FPS)
 			cb(dsi_drv, handle, cmd_opt, &fps_144hz_cmd);
-			if (cur_fps == MODE2_FPS) { /* 165Hz -> 144Hz */
-				mode_144hz_setting_low_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-				mode_144hz_setting_high_bl_v2[FPS_CMD_DELAY_INDEX].para_list[0] = 0;
-			}
-		} else
+		else
 			ret = 1;
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
-		if(is_mi_dev_support_nova()) {
-			if(vis_display_get_CurrentUsecaseID() != 0) {
-				vis_dsi_fps_switching_cmd(dst_fps, 1);
+
+		if (panel_build_id >= PANEL_BUILD_ID_P01) {
+			if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
+				if (dst_fps == MODE0_FPS)
+					gray_3d_lut_v2[0].para_list[2] = ctx->gray_level + DBI_TEMP_OFFSET;
+				else if (cur_fps == MODE0_FPS)
+					gray_3d_lut_v2[0].para_list[2] = ctx->gray_level;
+				cb(dsi_drv, handle, cmd_opt, &gray_settings_cmd);
 			}
 		}
-#endif
-
-		/* update gray level setting */
-		if (ctx->gray_level <= DBI_TEMP_INDEX1 && ctx->gray_level >= DBI_TEMP_INDEX5) {
-			if (dst_fps == MODE0_FPS)
-				gray_3d_lut_v2[0].para_list[2] = ctx->gray_level + DBI_TEMP_OFFSET;
-			else if (cur_fps == MODE0_FPS)
-				gray_3d_lut_v2[0].para_list[2] = ctx->gray_level;
-			cb(dsi_drv, handle, cmd_opt, &gray_settings_cmd);
-		}
-
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
-		//Novatek ASIC Notify fps
-		if (is_mi_dev_support_nova()) {
-			if (dst_fps == MODE0_FPS)
-				vis_fps_notify(60);
-			else if (dst_fps == MODE2_FPS)
-				vis_fps_notify(165);
-			else if (dst_fps == MODE1_FPS)
-				vis_fps_notify(120);
-			else if (dst_fps == MODE3_FPS)
-				vis_fps_notify(144);
-		}
-#endif
 	}
 
 	ctx->dynamic_fps = dst_fps;
@@ -2210,10 +2023,10 @@ static int panel_doze_disable(struct drm_panel *panel,
 	struct lcm *ctx = NULL;
 	//struct mtk_dsi *mtk_dsi = NULL;
 	char aod2normal_tb[] = {0x38, 0x00};
-	char mode_60hz_setting[] = {0x2F, 0x03};
-	char mode_165hz_setting[] = {0x2F, 0x02};
+	char mode_60hz_setting[] = {0x2F, 0x02};
+	char mode_90hz_setting[] = {0x2F, 0x01};
 	char mode_120hz_setting[] = {0x2F, 0x00};
-	char mode_144hz_setting[] = {0x2F, 0x01};
+	char mode_144hz_setting[] = {0x2F, 0x03};
 
 #ifdef CONFIG_FACTORY_BUILD
 	pr_info("%s factory\n", __func__);
@@ -2230,6 +2043,11 @@ static int panel_doze_disable(struct drm_panel *panel,
 		return -1;
 	}
 
+	if (!cb) {
+		pr_err("cb is null\n");
+		return -1;
+	}
+
 	pr_info("%s +\n", __func__);
 	ctx = panel_to_lcm(panel);
 	//mtk_dsi = (struct mtk_dsi *)dsi;
@@ -2240,8 +2058,8 @@ static int panel_doze_disable(struct drm_panel *panel,
 		cb(dsi, handle, mode_120hz_setting, ARRAY_SIZE(mode_120hz_setting));
 	} else if (ctx->dynamic_fps == 60) {
 		cb(dsi, handle, mode_60hz_setting, ARRAY_SIZE(mode_60hz_setting));
-	} else if (ctx->dynamic_fps == 165) {
-		cb(dsi, handle, mode_165hz_setting, ARRAY_SIZE(mode_165hz_setting));
+	} else if (ctx->dynamic_fps == 90) {
+		cb(dsi, handle, mode_90hz_setting, ARRAY_SIZE(mode_90hz_setting));
 	} else if (ctx->dynamic_fps == 144) {
 		cb(dsi, handle, mode_144hz_setting, ARRAY_SIZE(mode_144hz_setting));
 	}
@@ -2258,15 +2076,7 @@ static int panel_doze_disable_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 {
 	int i = 0;
 	struct lcm *ctx = NULL;
-	static int doze_disable_flag = 0;
-	static struct mipi_dsi_msg doze_disable_code[ARRAY_SIZE(doze_disable_setting_v2)] = { 0 };
-	static struct mipi_dsi_msg doze_restore_fps_60hz_msg[ARRAY_SIZE(mode_60hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg doze_restore_fps_120hz_msg[ARRAY_SIZE(mode_120hz_setting_no_demura_v2)] = { 0 };
-	static struct mipi_dsi_msg doze_restore_fps_144hz_msg[ARRAY_SIZE(mode_144hz_setting_no_demura_v2)] = { 0 };
-	/* for dbv <= 0x22B, 165hz need to send demura for low and high bl */
-	static struct mipi_dsi_msg doze_restore_fps_165hz_low_bl_msg[ARRAY_SIZE(mode_165hz_setting_low_bl_v2)] = { 0 };
-	/* for dbv > 0x22B, 165hz need to send demura for low and high bl */
-	static struct mipi_dsi_msg doze_restore_fps_165hz_high_bl_msg[ARRAY_SIZE(mode_165hz_setting_high_bl_v2)] = { 0 };
+	struct mipi_dsi_msg doze_disable_code[ARRAY_SIZE(doze_disable_setting_v2)] = { 0 };
 
 	pr_info("%s: +\n", __func__);
 
@@ -2291,77 +2101,19 @@ static int panel_doze_disable_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 		return -1;
 	}
 
-	if (!doze_disable_flag) {
-		doze_disable_flag = 1;
-
-		for (i = 0; i < ARRAY_SIZE(mode_60hz_setting_no_demura_v2); i++) {
-			doze_restore_fps_60hz_msg[i].tx_len = mode_60hz_setting_no_demura_v2[i].count;
-			doze_restore_fps_60hz_msg[i].tx_buf = mode_60hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_120hz_setting_no_demura_v2); i++) {
-			doze_restore_fps_120hz_msg[i].tx_len = mode_120hz_setting_no_demura_v2[i].count;
-			doze_restore_fps_120hz_msg[i].tx_buf = mode_120hz_setting_no_demura_v2[i].para_list;
-		}
-		for (i = 0; i < ARRAY_SIZE(mode_144hz_setting_no_demura_v2); i++) {
-			doze_restore_fps_144hz_msg[i].tx_len = mode_144hz_setting_no_demura_v2[i].count;
-			doze_restore_fps_144hz_msg[i].tx_buf = mode_144hz_setting_no_demura_v2[i].para_list;
-		}
-		/* for dbv <= 0x22B, 165hz need to send demura for low and high bl */
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_low_bl_v2); i++) {
-			doze_restore_fps_165hz_low_bl_msg[i].tx_len = mode_165hz_setting_low_bl_v2[i].count;
-			doze_restore_fps_165hz_low_bl_msg[i].tx_buf = mode_165hz_setting_low_bl_v2[i].para_list;
-		}
-		/* for dbv > 0x22B, 165hz need to send demura for low and high bl */
-		for (i = 0; i < ARRAY_SIZE(mode_165hz_setting_high_bl_v2); i++) {
-			doze_restore_fps_165hz_high_bl_msg[i].tx_len = mode_165hz_setting_high_bl_v2[i].count;
-			doze_restore_fps_165hz_high_bl_msg[i].tx_buf = mode_165hz_setting_high_bl_v2[i].para_list;
-		}
-		/* doze disable settings */
-		for (i = 0; i < ARRAY_SIZE(doze_disable_setting_v2); i++) {
-			doze_disable_code[i].tx_len = doze_disable_setting_v2[i].count;
-			doze_disable_code[i].tx_buf = doze_disable_setting_v2[i].para_list;
-		}
+	if (ctx->dynamic_fps == 120) {
+		doze_disable_setting_v2[1].para_list[1]  = 0x00;
+	} else if (ctx->dynamic_fps == 60) {
+		doze_disable_setting_v2[1].para_list[1]  = 0x02;
+	} else if (ctx->dynamic_fps == 90) {
+		doze_disable_setting_v2[1].para_list[1]  = 0x01;
+	} else if (ctx->dynamic_fps == 144) {
+		doze_disable_setting_v2[1].para_list[1]  = 0x03;
 	}
 
-	struct mtk_dsi_cmd_msg fps_60hz_cmd = {
-		.is_rd = 0, /* 0:write 1:read */
-		.is_package = 0,
-		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_60hz_setting_no_demura_v2),
-		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = doze_restore_fps_60hz_msg,
-	};
-
-	struct mtk_dsi_cmd_msg fps_165hz_cmd = {
-		.is_rd = 0, /* 0:write 1:read */
-		.is_package = 0,
-		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_165hz_setting_low_bl_v2),
-		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = doze_restore_fps_165hz_low_bl_msg,
-	};
-
-	struct mtk_dsi_cmd_msg fps_120hz_cmd = {
-		.is_rd = 0, /* 0:write 1:read */
-		.is_package = 0,
-		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_120hz_setting_no_demura_v2),
-		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = doze_restore_fps_120hz_msg,
-	};
-
-	struct mtk_dsi_cmd_msg fps_144hz_cmd = {
-		.is_rd = 0, /* 0:write 1:read */
-		.is_package = 0,
-		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(mode_144hz_setting_no_demura_v2),
-		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = doze_restore_fps_144hz_msg,
-	};
-
-	if (bl_value > 0x22B) {
-		fps_165hz_cmd.cmd_num = ARRAY_SIZE(mode_165hz_setting_high_bl_v2);
-		fps_165hz_cmd.cmd_msg = doze_restore_fps_165hz_high_bl_msg;
+	for (i = 0; i < ARRAY_SIZE(doze_disable_setting_v2); i++) {
+		doze_disable_code[i].tx_len= doze_disable_setting_v2[i].count;
+		doze_disable_code[i].tx_buf = doze_disable_setting_v2[i].para_list;
 	}
 
 	struct mtk_dsi_cmd_msg doze_disable_cmd = {
@@ -2375,26 +2127,19 @@ static int panel_doze_disable_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 
 	cb(dsi_drv, handle, cmd_opt, &doze_disable_cmd);
 
-	/* restore fps setting */
-	if (ctx->dynamic_fps == 120) {
-		cb(dsi_drv, handle, cmd_opt, &fps_120hz_cmd);
-	} else if (ctx->dynamic_fps == 60) {
-		cb(dsi_drv, handle, cmd_opt, &fps_60hz_cmd);
-	} else if (ctx->dynamic_fps == 165) {
-		cb(dsi_drv, handle, cmd_opt, &fps_165hz_cmd);
-	} else if (ctx->dynamic_fps == 144) {
-		cb(dsi_drv, handle, cmd_opt, &fps_144hz_cmd);
-	}
-
 	ctx->doze_suspend = false;
 	atomic_set(&doze_enable, 0);
-	pr_info("%s !-, fps:%d\n", __func__, ctx->dynamic_fps);
+	pr_info("%s !-\n", __func__);
 	return 0;
 }
 
-static int panel_doze_suspend(struct drm_panel *panel, void * dsi, dcs_write_gce cb, void *handle) 
+static int panel_doze_suspend(struct drm_panel *panel, void * dsi, dcs_write_gce cb, void *handle)
 {
 	struct lcm *ctx = NULL;
+	char enter_120hz[] = {0x2F, 0x00};
+	//char gir_on[] = {0x5F, 0x00};
+	char normal2aod_tb[] ={0x39, 0x00};
+	char brightnessh_tb[] = {0x51, 0x00, 0x63, 0x00, 0x63, 0x05, 0x54};
 
 #ifdef CONFIG_FACTORY_BUILD
 	pr_info("%s factory\n", __func__);
@@ -2428,16 +2173,22 @@ static int panel_doze_suspend(struct drm_panel *panel, void * dsi, dcs_write_gce
 		goto exit;
 	}
 
-	if (ctx->doze_brightness_state == DOZE_BRIGHTNESS_LBM) {
-		push_table(ctx, doze_enable_l,
-			sizeof(doze_enable_l) / sizeof(struct LCM_setting_table));
-	} else {
-		push_table(ctx, doze_enable_h,
-			sizeof(doze_enable_h) / sizeof(struct LCM_setting_table));		
+	if (ctx->doze_brightness_state == DOZE_BRIGHTNESS_HBM) {
+		brightnessh_tb[1] = 0x02;
+		brightnessh_tb[2] = 0xB2;
+		brightnessh_tb[3] = 0x02;
+		brightnessh_tb[4] = 0xB2;
+		brightnessh_tb[5] = 0x3F;
+		brightnessh_tb[6] = 0xFF;
 	}
+
+	cb(dsi, handle, enter_120hz, ARRAY_SIZE(enter_120hz));
+	//cb(dsi, handle, gir_on, ARRAY_SIZE(gir_on));
+	cb(dsi, handle, normal2aod_tb, ARRAY_SIZE(normal2aod_tb));
+	cb(dsi, handle, brightnessh_tb, ARRAY_SIZE(brightnessh_tb));
 	ctx->doze_suspend = true;
 	//usleep_range(5 * 1000, 5* 1000 + 10);
-	pr_info("enter aod in doze_suspend\n");
+	pr_info("lhbm enter aod in doze_suspend\n");
 
 exit:
 	pr_info("%s !-\n", __func__);
@@ -2450,8 +2201,7 @@ static int panel_doze_suspend_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 	int i = 0;
 	struct lcm *ctx = NULL;
 	static int flag = 0;
-	static struct mipi_dsi_msg doze_suspend_msg[ARRAY_SIZE(doze_suspend_setting_v2)] = { 0 };
-	static struct mipi_dsi_msg doze_suspend_no_demura_msg[ARRAY_SIZE(doze_suspend_setting_no_demura_v2)] = { 0 };
+	static struct mipi_dsi_msg doze_suspend_code[ARRAY_SIZE(doze_suspend_setting_v2)] = { 0 };
 
 	pr_info("%s: +\n", __func__);
 
@@ -2471,6 +2221,11 @@ static int panel_doze_suspend_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 		return -1;
 	}
 
+	if (!cb) {
+		pr_err("cb is null\n");
+		return -1;
+	}
+
 	if (ctx->doze_suspend) {
 		pr_info("%s already suspend, skip\n", __func__);
 		goto exit;
@@ -2478,58 +2233,43 @@ static int panel_doze_suspend_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi
 
 	if (ctx->doze_brightness_state == DOZE_BRIGHTNESS_HBM) {
 		/* normal dbv for 60nit */
-		doze_suspend_setting_v2[9].para_list[1]  = 0x02;
-		doze_suspend_setting_v2[9].para_list[2]  = 0xB2;
-		doze_suspend_setting_no_demura_v2[1].para_list[1]  = 0x02;
-		doze_suspend_setting_no_demura_v2[1].para_list[2]  = 0xB2;
+		doze_suspend_setting_v2[2].para_list[1]  = 0x02;
+		doze_suspend_setting_v2[2].para_list[2]  = 0xB2;
+		doze_suspend_setting_v2[2].para_list[3]  = 0x02;
+		doze_suspend_setting_v2[2].para_list[4]  = 0xB2;
 		/* aod dbv for 60nit */
-		doze_suspend_setting_v2[11].para_list[1]  = 0x3F;
-		doze_suspend_setting_v2[11].para_list[2]  = 0xFF;
-		doze_suspend_setting_no_demura_v2[3].para_list[1]  = 0x3F;
-		doze_suspend_setting_no_demura_v2[3].para_list[2]  = 0xFF;
+		doze_suspend_setting_v2[2].para_list[5]  = 0x3F;
+		doze_suspend_setting_v2[2].para_list[6]  = 0xFF;
 	} else if (ctx->doze_brightness_state == DOZE_BRIGHTNESS_LBM) {
 		/* normal dbv for 5nit */
-		doze_suspend_setting_v2[9].para_list[1]  = 0x00;
-		doze_suspend_setting_v2[9].para_list[2]  = 0x65;
-		doze_suspend_setting_no_demura_v2[1].para_list[1]  = 0x00;
-		doze_suspend_setting_no_demura_v2[1].para_list[2]  = 0x65;
-		/* aod dbv for 5nit */
-		doze_suspend_setting_v2[11].para_list[1]  = 0x05;
-		doze_suspend_setting_v2[11].para_list[2]  = 0x54;
-		doze_suspend_setting_no_demura_v2[3].para_list[1]  = 0x05;
-		doze_suspend_setting_no_demura_v2[3].para_list[2]  = 0x54;
+		doze_suspend_setting_v2[2].para_list[1]  = 0x00;
+		doze_suspend_setting_v2[2].para_list[2]  = 0x63;
+		doze_suspend_setting_v2[2].para_list[3]  = 0x00;
+		doze_suspend_setting_v2[2].para_list[4]  = 0x63;
+		/* normal dbv for 5nit */
+		doze_suspend_setting_v2[2].para_list[5]  = 0x05;
+		doze_suspend_setting_v2[2].para_list[6]  = 0x54;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(doze_suspend_setting_v2); i++) {
-		doze_suspend_msg[i].tx_len= doze_suspend_setting_v2[i].count;
-		doze_suspend_msg[i].tx_buf = doze_suspend_setting_v2[i].para_list;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(doze_suspend_setting_no_demura_v2); i++) {
-		doze_suspend_no_demura_msg[i].tx_len= doze_suspend_setting_no_demura_v2[i].count;
-		doze_suspend_no_demura_msg[i].tx_buf = doze_suspend_setting_no_demura_v2[i].para_list;
+		doze_suspend_code[i].tx_len= doze_suspend_setting_v2[i].count;
+		doze_suspend_code[i].tx_buf = doze_suspend_setting_v2[i].para_list;
 	}
 
 	struct mtk_dsi_cmd_msg doze_suspend_cmd = {
 		.is_rd = 0, /* 0:write 1:read */
 		.is_package = 0,
 		.rd_to_slot = 0,
-		.cmd_num = ARRAY_SIZE(doze_suspend_setting_no_demura_v2),
+		.cmd_num = ARRAY_SIZE(doze_suspend_setting_v2),
 		.transfer_mode = PACKET_LP_MODE,
-		.cmd_msg = doze_suspend_no_demura_msg,
+		.cmd_msg = doze_suspend_code,
 	};
-
-	/* 165Hz -> doze_suspend settings(with demura) */
-	if (ctx->dynamic_fps == MODE2_FPS) {
-		doze_suspend_cmd.cmd_num = ARRAY_SIZE(doze_suspend_setting_v2);
-		doze_suspend_cmd.cmd_msg = doze_suspend_msg;
-	}
 
 	cb(dsi_drv, handle, cmd_opt, &doze_suspend_cmd);
 	ctx->doze_suspend = true;
 
 exit:
-	pr_info("%s !-, fps:%d\n", __func__, ctx->dynamic_fps);
+	pr_info("%s !-\n", __func__);
 	return 0;
 }
 
@@ -2585,13 +2325,11 @@ static int panel_set_doze_brightness(struct drm_panel *panel, int doze_brightnes
 	int ret = 0;
 	unsigned int format = 0;
 #ifndef CONFIG_FACTORY_BUILD
-	/* dbv setting for 60nit */
 	struct LCM_setting_table backlight_h[] = {
 			{0x51, 06, {0x02, 0xB2, 0x02, 0xB2, 0x3F, 0xFF}},
 	};
-	/* dbv setting for 5nit */
 	struct LCM_setting_table backlight_l[] = {
-			{0x51, 06, {0x00, 0x65, 0x00, 0x65, 0x05, 0x54}},
+			{0x51, 06, {0x00, 0x63, 0x00, 0x63, 0x05, 0x54}},
 	};
 	// struct LCM_setting_table backlight_0[] = {
 	// 		{0x51, 06, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
@@ -2623,16 +2361,19 @@ static int panel_set_doze_brightness(struct drm_panel *panel, int doze_brightnes
 		goto exit;
 	} else if (DOZE_BRIGHTNESS_LBM  == doze_brightness) {
 		ret = mi_disp_panel_ddic_send_cmd(doze_enable_l, ARRAY_SIZE(doze_enable_l), format);
+
 	} else if (DOZE_BRIGHTNESS_HBM == doze_brightness) {
 		ret = mi_disp_panel_ddic_send_cmd(doze_enable_h, ARRAY_SIZE(doze_enable_h), format);
 	}
 
 #else
+
 	if (DOZE_TO_NORMAL == doze_brightness) {
 		// ret = mi_disp_panel_ddic_send_cmd(backlight_0, ARRAY_SIZE(backlight_0), format);
 		atomic_set(&doze_enable, 0);
 	} else if (DOZE_BRIGHTNESS_LBM  == doze_brightness) {
 		ret = mi_disp_panel_ddic_send_cmd(backlight_l, ARRAY_SIZE(backlight_l), format);
+
 	} else if (DOZE_BRIGHTNESS_HBM == doze_brightness) {
 		ret = mi_disp_panel_ddic_send_cmd(backlight_h, ARRAY_SIZE(backlight_h), format);
 	}
@@ -2737,10 +2478,6 @@ static void lcm_esd_restore_backlight_v2(struct drm_panel *panel, void *dsi_drv,
 	static int flag = 0;
 	static struct mipi_dsi_msg esd_restore_bl_code[ARRAY_SIZE(esd_restore_bl_setting_v2)] = { 0 };
 
-
-	if (!cb)
-		return;
-
 	for (i = 0; i < ARRAY_SIZE(esd_restore_bl_setting_v2); i++) {
 		esd_restore_bl_code[i].tx_len = esd_restore_bl_setting_v2[i].count;
 		esd_restore_bl_code[i].tx_buf = esd_restore_bl_setting_v2[i].para_list;
@@ -2763,11 +2500,13 @@ static void lcm_esd_restore_backlight_v2(struct drm_panel *panel, void *dsi_drv,
 	return;
 }
 
+
+#if 0
 #ifdef CONFIG_MI_DISP_FP_STATE
 static void lcm_fp_state_restore_backlight(struct mtk_dsi *dsi)
 {
 	struct lcm *ctx = NULL;
-	struct mi_dsi_panel_cfg *mi_cfg = NULL;
+	//struct mi_dsi_panel_cfg *mi_cfg = NULL;
 	int bl_level = 0;
 	unsigned int format = 0;
 	struct LCM_setting_table restore_backlight_level[] = {
@@ -2785,13 +2524,14 @@ static void lcm_fp_state_restore_backlight(struct mtk_dsi *dsi)
 		return;
 	}
 
-	mi_cfg = &dsi->mi_cfg;
-	bl_level = mi_cfg->last_no_zero_bl_level;
+	//mi_cfg = &dsi->mi_cfg;
+	//bl_level = mi_cfg->last_no_zero_bl_level;
 	if (atomic_read(&doze_enable)) {
-		if (mi_cfg->last_bl_level)
-			bl_level = mi_cfg->last_bl_level;
-		else
-			bl_level = 0;
+		//if (mi_cfg->last_bl_level)
+			//bl_level = mi_cfg->last_bl_level;
+		//else
+			//bl_level = 0;
+		;			
 	} else {
 		pr_err("%s, only restore from doze\n", __func__);
 		return;
@@ -2800,12 +2540,12 @@ static void lcm_fp_state_restore_backlight(struct mtk_dsi *dsi)
 	restore_backlight_level[0].para_list[0] = (bl_level >> 8) & 0xFF;
 	restore_backlight_level[0].para_list[1] = bl_level & 0xFF;
 
-	mi_disp_panel_ddic_send_cmd(restore_backlight_level, ARRAY_SIZE(restore_backlight_level), format);
+	//mi_disp_panel_ddic_send_cmd(restore_backlight_level, ARRAY_SIZE(restore_backlight_level), format);
 
-	pr_info("%s setbacklight %d, doze_enabled: %d last_backlight: %d %d \n", __func__,
-			bl_level, atomic_read(&doze_enable), mi_cfg->last_bl_level, mi_cfg->last_no_zero_bl_level);
+	//pr_info("%s setbacklight %d, doze_enabled: %d last_backlight: %d %d \n", __func__, bl_level, atomic_read(&doze_enable), mi_cfg->last_bl_level, mi_cfg->last_no_zero_bl_level);
 	return;
 }
+#endif
 #endif
 
 static int panel_get_panel_info(struct drm_panel *panel, char *buf)
@@ -2854,25 +2594,13 @@ static int panel_get_factory_max_brightness(struct drm_panel *panel, u32 *max_br
 	return 0;
 }
 
-#if 0
 static void mi_parse_cmdline_perBL(struct LHBM_WHITEBUF * lhbm_whitebuf) {
-	int i = 0, temp = 0;
-	int gamma_coffee_w250_R[3] = {980,981,1032};
-	int gamma_coffee_w250_G[3] = {980,985,1030};
-	int gamma_coffee_w250_B[3] = {980,982,1033};
-	int gamma_coffee_w1300_other_R[2] = {1000,1031};
-	int gamma_coffee_w1300_other_G[2] = {1025,1030};
-	int gamma_coffee_w1300_other_B[2] = {1010,1042};
-	int gamma_coffee_w1300_700_80_R[10] = {1000,996 ,995 ,993 ,990 ,990 ,990 ,988 ,985 ,985};
-	int gamma_coffee_w1300_700_80_G[10] = {1018,1015,1012,1010,1006,1003,1000,998 ,998 ,996};
-	int gamma_coffee_w1300_700_80_B[10] = {1005,1005,1003,1000,998 ,998 ,995 ,992 ,990 ,990};
-	int gamma_coffee_w500[4] = {1000,1010,998,990};
-
-	static u16 lhbm_cmdbuf[21] = {0};
+	int i = 0;
+	static u8 lhbm_cmdbuf[12] = {0};
 
 	pr_info("mi_parse_cmdline_perBL enter\n");
 
-	if(!lhbm_w900_update_flag && !lhbm_w110_update_flag && !lhbm_g500_update_flag) {
+	if(!lhbm_w1300_update_flag && !lhbm_w250_update_flag) {
 		pr_info("don't need update white rgb config");
 		return;
 	}
@@ -2881,268 +2609,30 @@ static void mi_parse_cmdline_perBL(struct LHBM_WHITEBUF * lhbm_whitebuf) {
 		pr_err("lhbm_status == NULL\n");
 		return;
 	}
-	for (i = 0; i < 21; i++) {
-		sscanf(oled_lhbm_cmdline + 4 * i, "%04hx", &lhbm_cmdbuf[i]);
+
+	for (i = 0; i < 12; i++) {
+		sscanf(oled_lhbm_cmdline + 2 * i, "%02hhx", &lhbm_cmdbuf[i]);
 	}
 
-	for (i = 0; i < 6; i +=2) {
-		if(i == 0) { // R
-			//250nit
-			temp = (int)lhbm_cmdbuf[i/2]*gamma_coffee_w250_R[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 3]*gamma_coffee_w250_R[1]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 6]*gamma_coffee_w250_R[2]* 4 / 1000;
-			lhbm_whitebuf->nit_1600_700_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_250[i+1] = temp & 0xFF;
-
-			//1300nit
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[1]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[2]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[3]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[4]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[5]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[6]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[7]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[8]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_R[9]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 12]*gamma_coffee_w1300_other_R[0]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_1300[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 15]*gamma_coffee_w1300_other_R[1] * 4 / 1000;
-			lhbm_whitebuf->nit_1600_700_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_1300[i+1] = temp & 0xFF;
-		} else if(i == 2) { // G
-			//250nit
-			temp = (int)lhbm_cmdbuf[i/2]*gamma_coffee_w250_G[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 3]*gamma_coffee_w250_G[1]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 6]*gamma_coffee_w250_G[2]* 4 / 1000;
-			lhbm_whitebuf->nit_1600_700_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_250[i+1] = temp & 0xFF;
-
-			//1300nit
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[1]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[2]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[3]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[4]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[5]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[6]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[7]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[8]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_G[9]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 12]*gamma_coffee_w1300_other_G[0]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_1300[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 15]*gamma_coffee_w1300_other_G[1]*4/1000;
-			lhbm_whitebuf->nit_1600_700_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_1300[i+1] = temp & 0xFF;
-		} else if(i == 4) {  // B
-			//250nit
-			temp = (int)lhbm_cmdbuf[i/2]*gamma_coffee_w250_B[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 3]*gamma_coffee_w250_B[1]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_250[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 6]*gamma_coffee_w250_B[2]* 4 / 1000;
-			lhbm_whitebuf->nit_1600_700_250[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_250[i+1] = temp & 0xFF;
-
-			//1300nit
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[0]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[1]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[2]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[3]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[4]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1006_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[5]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1003_998[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[6]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_990_1000_995[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[7]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_988_998_992[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[8]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_998_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 9]*gamma_coffee_w1300_700_80_B[9]* 4 / 1000;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_700_80_1300_985_996_990[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 12]*gamma_coffee_w1300_other_B[0]* 4 / 1000;
-			lhbm_whitebuf->nit_80_2_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_80_2_1300[i+1] = temp & 0xFF;
-
-			temp = (int)lhbm_cmdbuf[i/2 + 15]*gamma_coffee_w1300_other_B[1]*4/1000;
-			lhbm_whitebuf->nit_1600_700_1300[i] = (temp & 0xFF00) >> 8;
-			lhbm_whitebuf->nit_1600_700_1300[i+1] = temp & 0xFF;
-		}
-	}
-
-	//500 nit
-	temp = (int)lhbm_cmdbuf[18]*gamma_coffee_w500[0]*4/1000;
-	lhbm_whitebuf->nit_700_80_500_100[0] = (temp & 0xFF00) >> 8;
-	lhbm_whitebuf->nit_700_80_500_100[1] =  temp & 0xFF;
-
-	temp = (int)lhbm_cmdbuf[18]*gamma_coffee_w500[1]*4/1000;;
-	lhbm_whitebuf->nit_700_80_500_101[0] = (temp & 0xFF00) >> 8;
-	lhbm_whitebuf->nit_700_80_500_101[1] =  temp & 0xFF;
-
-	temp = (int)lhbm_cmdbuf[19]*gamma_coffee_w500[2]*4/1000;
-	lhbm_whitebuf->nit_80_2_500[0] = (temp & 0xFF00) >> 8;
-	lhbm_whitebuf->nit_80_2_500[1] =  temp & 0xFF;
-
-	temp = (int)lhbm_cmdbuf[20]*gamma_coffee_w500[3]*4/1000;
-	lhbm_whitebuf->nit_1600_700_500[0] = (temp & 0xFF00) >> 8;
-	lhbm_whitebuf->nit_1600_700_500[1] =  temp & 0xFF;
-
-	pr_info("250nit 700-80 \n");
 	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_250[i]);
+		lhbm_whitebuf->lhbm_1300[i] = lhbm_cmdbuf[i];
+		lhbm_whitebuf->lhbm_250[i] = lhbm_cmdbuf[i+6];
 	}
 
-	pr_info("\n250nit 80-2 \n");
+	pr_info("lhbm_1300 \n");
 	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx ",lhbm_whitebuf->nit_80_2_250[i]);
+		pr_info("0x%02hhx",lhbm_whitebuf->lhbm_1300[i]);
 	}
 
-	pr_info("\n250nit 1600-700 \n");
+	pr_info("lhbm_250 \n");
 	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx ",lhbm_whitebuf->nit_1600_700_250[i]);
+		pr_info("0x%02hhx ",lhbm_whitebuf->lhbm_250[i]);
 	}
 
-	pr_info("\n1300nit 700-80 *1\n");
-	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_1000_1018_1005[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_996_1015_1005[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_995_1012_1003[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_993_1010_1000[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_990_1006_998[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_990_1003_998[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_990_1000_995[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_988_998_992[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_985_998_990[i]);
-		pr_info("0x%02hhx",lhbm_whitebuf->nit_700_80_1300_985_996_990[i]);
-	}
-
-	pr_info("\n1300nit 80-2 \n");
-	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx ",lhbm_whitebuf->nit_80_2_1300[i]);
-	}
-
-	pr_info("\n1300nit 1600-700 \n");
-	for (i = 0; i < 6; i++){
-		pr_info("0x%02hhx ",lhbm_whitebuf->nit_1600_700_1300[i]);
-	}
-
-
-	pr_info("gir 500 0x%02hhx 0x%02hhx 0x%02hhx 0x%02hhx 0x%02hhx 0x%02hhx,\n",
-		lhbm_whitebuf->nit_700_80_500_100[0],lhbm_whitebuf->nit_700_80_500_100[1],
-		lhbm_whitebuf->nit_80_2_500[0], lhbm_whitebuf->nit_80_2_500[1],
-		lhbm_whitebuf->nit_1600_700_500[0], lhbm_whitebuf->nit_1600_700_500[1]);
-
-	lhbm_w900_readbackdone = true;
-	lhbm_w110_readbackdone = true;
-	lhbm_g500_readbackdone = true;
-	lhbm_w900_update_flag = false;
-	lhbm_w110_update_flag = false;
-	lhbm_g500_update_flag =false;
+	lhbm_w1300_readbackdone = true;
+	lhbm_w250_readbackdone = true;
+	lhbm_w1300_update_flag = false;
+	lhbm_w250_update_flag = false;
 
 	return;
 }
@@ -3164,8 +2654,8 @@ static int panel_fod_lhbm_init (struct mtk_dsi* dsi)
 
 static int mi_disp_panel_send_lhbm(struct mtk_dsi * dsi, enum lhbm_cmd_type type, int bl_level)
 {
-
 	struct lcm * ctx = NULL;
+	int i = 0;
 	unsigned int format = FORMAT_LP_MODE | FORMAT_BLOCK;
 	if(!dsi) {
 		pr_err("dsi is null\n");
@@ -3185,67 +2675,35 @@ static int mi_disp_panel_send_lhbm(struct mtk_dsi * dsi, enum lhbm_cmd_type type
 		return 0;
 	}
 
-	if (bl_level < LHBM_BL_INTERVAL_1_START)
-		bl_level = LHBM_BL_INTERVAL_1_START;
-	else if (bl_level > LHBM_BL_INTERVAL_3_END)
-		bl_level = LHBM_BL_INTERVAL_3_END;
-
-	if (bl_level >= LHBM_BL_INTERVAL_2_START && bl_level <= LHBM_BL_INTERVAL_2_END) {//700nit~80nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-			case TYPE_GREEN_500:
-			case TYPE_WHITE_250:
-				mi_disp_panel_ddic_send_cmd(lhbm_normal_700nit_80nit, ARRAY_SIZE(lhbm_normal_700nit_80nit), format);
-			break;
-			case TYPE_HLPM_W1300:
-			case TYPE_HLPM_W250:
-				mi_disp_panel_ddic_send_cmd(lhbm_hlpm_700nit_80nit, ARRAY_SIZE(lhbm_hlpm_700nit_80nit), format);
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-			return -EINVAL;
-		}
-	} else if (bl_level >= LHBM_BL_INTERVAL_1_START && bl_level <= LHBM_BL_INTERVAL_1_END) {//80nit~2nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-			case TYPE_GREEN_500
-:
-			case TYPE_WHITE_250:
-				mi_disp_panel_ddic_send_cmd(lhbm_normal_80nit_2nit, ARRAY_SIZE(lhbm_normal_80nit_2nit), format);
-			break;
-			case TYPE_HLPM_W1300:
-			case TYPE_HLPM_W250:
-				mi_disp_panel_ddic_send_cmd(lhbm_hlpm_80nit_2nit, ARRAY_SIZE(lhbm_hlpm_80nit_2nit), format);
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-			return -EINVAL;
-		}
-	} else if (bl_level >= LHBM_BL_INTERVAL_3_START && bl_level <= LHBM_BL_INTERVAL_3_END) {//1600nit~700nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-			case TYPE_GREEN_500:
-			case TYPE_WHITE_250:
-				mi_disp_panel_ddic_send_cmd(lhbm_normal_1600nit_700nit, ARRAY_SIZE(lhbm_normal_1600nit_700nit), format);
-			break;
-			case TYPE_HLPM_W1300:
-			case TYPE_HLPM_W250:
-				mi_disp_panel_ddic_send_cmd(lhbm_hlpm_1600nit_700nit, ARRAY_SIZE(lhbm_hlpm_1600nit_700nit), format);
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-			return -EINVAL;
-		}
-	} else {
-		pr_info("Error--lhbm_cmd_type:%d , %d backlight is Out of range \n", type, bl_level);
+	switch (type) {
+		case TYPE_WHITE_1300:
+		case TYPE_GREEN_500:
+		case TYPE_WHITE_250:
+			mi_disp_panel_ddic_send_cmd(lhbm_normal_on, ARRAY_SIZE(lhbm_normal_on), format);
+			for (i = 0; i < 6; i++) {
+				pr_info("lhbm_normal_on[%d]:0x%02x\n", i, lhbm_normal_on[1].para_list[i]);
+			}
+		break;
+		case TYPE_HLPM_W1300:
+		case TYPE_HLPM_W250:
+			mi_disp_panel_ddic_send_cmd(lhbm_hlpm_on, ARRAY_SIZE(lhbm_hlpm_on), format);
+			for (i = 0; i < 6; i++) {
+				pr_info("lhbm_hlpm_on[%d]:0x%02x\n", i, lhbm_hlpm_on[2].para_list[i]);
+			}
+		break;
+		default:
+			pr_err("unsuppport cmd \n");
+		return -EINVAL;
 	}
+
 	return 0;
 }
 
 static int mi_disp_panel_update_lhbm_white_param(struct mtk_dsi * dsi, enum lhbm_cmd_type type, int bl_level)
 {
-	int i = 0;
+	int i = 0, table_size = 0;
 	struct lcm * ctx = NULL;
+	unsigned int temp = 0;
 
 	if(!dsi) {
 		pr_err("dsi is null\n");
@@ -3265,205 +2723,132 @@ static int mi_disp_panel_update_lhbm_white_param(struct mtk_dsi * dsi, enum lhbm
 	}
 	*/
 
-	if(!lhbm_w900_readbackdone ||
-		 !lhbm_w110_readbackdone ||
-		 !lhbm_g500_readbackdone) {
+	if(!lhbm_w1300_readbackdone || !lhbm_w250_readbackdone) {
 		pr_info("mi_disp_panel_update_lhbm_white_param cmdline_lhbm:%s\n", oled_lhbm_cmdline);
 
 		mi_parse_cmdline_perBL(&lhbm_whitebuf);
 	}
 
-	if (bl_level < LHBM_BL_INTERVAL_1_START)
-		bl_level = LHBM_BL_INTERVAL_1_START;
-	else if (bl_level > LHBM_BL_INTERVAL_3_END)
-		bl_level = LHBM_BL_INTERVAL_3_END;
+	pr_info("lhbm update 0xD1, lhbm_cmd_type:%d backlight:%d \n", type, bl_level);
 
-	pr_info("lhbm update 0xD0, lhbm_cmd_type:%d backlight:%d \n", type, bl_level);
-
-	if (bl_level >= LHBM_BL_INTERVAL_2_START && bl_level <= LHBM_BL_INTERVAL_2_END) {//700nit~80nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-				if (bl_level >= 0x51D && bl_level <= 0xC1D) {// R/G/B = 1.000/1.018/1.005
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_1000_1018_1005[i];
-					}
-				} else if (bl_level >= 0xC1E && bl_level <= 0xE1A) {// R/G/B = 0.996/1.015/1.005
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_996_1015_1005[i];
-					}
-				} else if (bl_level >= 0xE1B && bl_level <= 0x1017) {// R/G/B = 0.995/1.012/1.003
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_995_1012_1003[i];
-					}
-				} else if (bl_level >= 0x1018 && bl_level <= 0x1214) {// R/G/B = 0.993/1.010/1.000
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_993_1010_1000[i];
-					}
-				} else if (bl_level >= 0x1215 && bl_level <= 0x160E) {// R/G/B = 0.990/1.006/0.998
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1006_998[i];
-					}
-				}  else if (bl_level >= 0x160F && bl_level <= 0x180B) {// R/G/B = 0.990/1.003/0.998
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1003_998[i];
-					}
-				}  else if (bl_level >= 0x180C && bl_level <= 0x1C05) {// R/G/B = 0.990/1.000/0.995
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1000_995[i];
-					}
-				}  else if (bl_level >= 0x1C06 && bl_level <= 0x1FFE) {// R/G/B = 0.988/0.998/0.992
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_988_998_992[i];
-					}
-				}  else if (bl_level >= 0x1FFF && bl_level <= 0x2664) {// R/G/B = 0.985/0.998/0.990
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_985_998_990[i];
-					}
-				}  else if (bl_level >= 0x2665 && bl_level <= 0x2CCB) {// R/G/B = 0.985/0.996/0.990
-					for (i = 0; i < 6; i++) {
-						lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_1300_985_996_990[i];
-					}
-				}
-			break;
-			case TYPE_HLPM_W1300:
-				if (bl_level >= 0x51D && bl_level <= 0xC1D) {// R/G/B = 1.000/1.018/1.005
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_1000_1018_1005[i];
-					}
-				} else if (bl_level >= 0xC1E && bl_level <= 0xE1A) {// R/G/B = 0.996/1.015/1.005
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_996_1015_1005[i];
-					}
-				} else if (bl_level >= 0xE1B && bl_level <= 0x1017) {// R/G/B = 0.995/1.012/1.003
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_995_1012_1003[i];
-					}
-				} else if (bl_level >= 0x1018 && bl_level <= 0x1214) {// R/G/B = 0.993/1.010/1.000
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_993_1010_1000[i];
-					}
-				} else if (bl_level >= 0x1215 && bl_level <= 0x160E) {// R/G/B = 0.990/1.006/0.998
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1006_998[i];
-					}
-				}  else if (bl_level >= 0x160F && bl_level <= 0x180B) {// R/G/B = 0.990/1.003/0.998
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1003_998[i];
-					}
-				}  else if (bl_level >= 0x180C && bl_level <= 0x1C05) {// R/G/B = 0.990/1.000/0.995
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_990_1000_995[i];
-					}
-				}  else if (bl_level >= 0x1C06 && bl_level <= 0x1FFE) {// R/G/B = 0.988/0.998/0.992
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_988_998_992[i];
-					}
-				}  else if (bl_level >= 0x1FFF && bl_level <= 0x2664) {// R/G/B = 0.985/0.998/0.990
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_985_998_990[i];
-					}
-				}  else if (bl_level >= 0x2665 && bl_level <= 0x2CCB) {// R/G/B = 0.985/0.996/0.990
-					for (i = 0; i < 6; i++) {
-						lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_1300_985_996_990[i];
-					}
-				}
-			break;
-			case TYPE_WHITE_250:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_700nit_80nit[15].para_list[i] = lhbm_whitebuf.nit_700_80_250[i];
-				}
-			break;
-			case TYPE_HLPM_W250:
-				for (i = 0; i < 6; i++) {
-					lhbm_hlpm_700nit_80nit[16].para_list[i] = lhbm_whitebuf.nit_700_80_250[i];
-				}
-			break;
-			case TYPE_GREEN_500:
-			if (bl_level >= 0x51D && bl_level <= 0x180B) {//1.01
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_700nit_80nit[15].para_list[i] =
-						(i==2 || i==3)?lhbm_whitebuf.nit_700_80_500_101[i-2]:0;
-				}
-			} else if (bl_level >= 0x180C && bl_level <= 0x2CCB) {//1.0
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_700nit_80nit[15].para_list[i] =
-						(i==2 || i==3)?lhbm_whitebuf.nit_700_80_500_100[i-2]:0;
+	switch (type) {
+		case TYPE_WHITE_1300:
+			table_size = ARRAY_SIZE(rgb_ratio_table_1300nit);
+			for (i = 0; i < table_size; i++) {
+				if (bl_level < rgb_ratio_table_1300nit[i].bl_level) {
+					pr_info("TYPE_WHITE_1300 ratio found, ratio index:%d\n", i);
+					break;
 				}
 			}
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-		}
+			--i;
+			/* update gamma R */
+			temp = ((lhbm_whitebuf.lhbm_1300[0] << 8 | lhbm_whitebuf.lhbm_1300[1])*
+						(rgb_ratio_table_1300nit[i].r_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[0] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[1] = temp & 0xFF;
 
-	} else if (bl_level >= LHBM_BL_INTERVAL_1_START && bl_level <= LHBM_BL_INTERVAL_1_END) {//80nit~2nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_80nit_2nit[21].para_list[i] = lhbm_whitebuf.nit_80_2_1300[i];
+			/* update gamma G */
+			temp = ((lhbm_whitebuf.lhbm_1300[2] << 8 | lhbm_whitebuf.lhbm_1300[3])*
+						(rgb_ratio_table_1300nit[i].g_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[2] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[3] = temp & 0xFF;
+
+			/* update gamma B */
+			temp = ((lhbm_whitebuf.lhbm_1300[4] << 8 | lhbm_whitebuf.lhbm_1300[5])*
+						(rgb_ratio_table_1300nit[i].b_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[4] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[5] = temp & 0xFF;
+		break;
+		case TYPE_HLPM_W1300:
+			table_size = ARRAY_SIZE(rgb_ratio_table_1300nit);
+			for (i = 0; i < table_size; i++) {
+				if (bl_level < rgb_ratio_table_1300nit[i].bl_level) {
+					pr_info("TYPE_HLPM_W1300 ratio found, ratio index:%d\n", i);
+					break;
 				}
-			break;
-			case TYPE_HLPM_W1300:
-				for (i = 0; i < 6; i++) {
-					lhbm_hlpm_80nit_2nit[22].para_list[i] = lhbm_whitebuf.nit_80_2_1300[i];
+			}
+			--i;
+			/* update gamma R */
+			temp = ((lhbm_whitebuf.lhbm_1300[0] << 8 | lhbm_whitebuf.lhbm_1300[1])*
+						(rgb_ratio_table_1300nit[i].r_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[0] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[1] = temp & 0xFF;
+
+			/* update gamma G */
+			temp = ((lhbm_whitebuf.lhbm_1300[2] << 8 | lhbm_whitebuf.lhbm_1300[3])*
+						(rgb_ratio_table_1300nit[i].g_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[2] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[3] = temp & 0xFF;
+
+			/* update gamma B */
+			temp = ((lhbm_whitebuf.lhbm_1300[4] << 8 | lhbm_whitebuf.lhbm_1300[5])*
+						(rgb_ratio_table_1300nit[i].b_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[4] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[5] = temp & 0xFF;
+		break;
+		case TYPE_WHITE_250:
+			table_size = ARRAY_SIZE(rgb_ratio_table_250nit);
+			for (i = 0; i < table_size; i++) {
+				if (bl_level < rgb_ratio_table_250nit[i].bl_level) {
+					pr_info("TYPE_WHITE_250 ratio found, ratio index:%d\n", i);
+					break;
 				}
-			break;
-			case TYPE_WHITE_250:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_80nit_2nit[21].para_list[i] = lhbm_whitebuf.nit_80_2_250[i];
+			}
+			--i;
+			/* update gamma R */
+			temp = ((lhbm_whitebuf.lhbm_250[0] << 8 | lhbm_whitebuf.lhbm_250[1])*
+						(rgb_ratio_table_250nit[i].r_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[0] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[1] = temp & 0xFF;
+
+			/* update gamma G */
+			temp = ((lhbm_whitebuf.lhbm_250[2] << 8 | lhbm_whitebuf.lhbm_250[3])*
+						(rgb_ratio_table_250nit[i].g_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[2] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[3] = temp & 0xFF;
+
+			/* update gamma B */
+			temp = ((lhbm_whitebuf.lhbm_250[4] << 8 | lhbm_whitebuf.lhbm_250[5])*
+						(rgb_ratio_table_250nit[i].b_ratio*4))/1000;
+			lhbm_normal_on[1].para_list[4] = (temp >> 8) & 0xFF;
+			lhbm_normal_on[1].para_list[5] = temp & 0xFF;
+		break;
+		case TYPE_HLPM_W250:
+			table_size = ARRAY_SIZE(rgb_ratio_table_250nit);
+			for (i = 0; i < table_size; i++) {
+				if (bl_level < rgb_ratio_table_250nit[i].bl_level) {
+					pr_info("TYPE_HLPM_W250 ratio found, ratio index:%d\n", i);
+					break;
 				}
-			break;
-			case TYPE_HLPM_W250:
-				for (i = 0; i < 6; i++) {
-					lhbm_hlpm_80nit_2nit[22].para_list[i] = lhbm_whitebuf.nit_80_2_250[i];
-				}
-			break;
-			case TYPE_GREEN_500
-:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_80nit_2nit[21].para_list[i] =
-						(i==2 || i==3)?lhbm_whitebuf.nit_80_2_500[i-2]:0;
-				}
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-		}
-	} else if (bl_level >= LHBM_BL_INTERVAL_3_START && bl_level <= LHBM_BL_INTERVAL_3_END) {//1600nit~700nit
-		switch (type) {
-			case TYPE_WHITE_1300:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_1600nit_700nit[21].para_list[i] = lhbm_whitebuf.nit_1600_700_1300[i];
-				}
-			break;
-			case TYPE_HLPM_W1300:
-				for (i = 0; i < 6; i++) {
-					lhbm_hlpm_1600nit_700nit[22].para_list[i] = lhbm_whitebuf.nit_1600_700_1300[i];
-				}
-			break;
-			case TYPE_WHITE_250:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_1600nit_700nit[21].para_list[i] = lhbm_whitebuf.nit_1600_700_250[i];
-				}
-			break;
-			case TYPE_HLPM_W250:
-				for (i = 0; i < 6; i++) {
-					lhbm_hlpm_1600nit_700nit[22].para_list[i] = lhbm_whitebuf.nit_1600_700_250[i];
-				}
-			break;
-			case TYPE_GREEN_500:
-				for (i = 0; i < 6; i++) {
-					lhbm_normal_1600nit_700nit[21].para_list[i] =
-						(i==2 || i==3)?lhbm_whitebuf.nit_1600_700_500[i-2]:0;
-				}
-			break;
-			default:
-				pr_err("unsuppport cmd \n");
-		}
-	} else {
-		pr_info("Error--lhbm_cmd_type:%d , %d backlight is Out of range \n", type, bl_level);
+			}
+			--i;
+			/* update gamma R */
+			temp = ((lhbm_whitebuf.lhbm_250[0] << 8 | lhbm_whitebuf.lhbm_250[1])*
+						(rgb_ratio_table_250nit[i].r_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[0] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[1] = temp & 0xFF;
+
+			/* update gamma G */
+			temp = ((lhbm_whitebuf.lhbm_250[2] << 8 | lhbm_whitebuf.lhbm_250[3])*
+						(rgb_ratio_table_250nit[i].g_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[2] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[3] = temp & 0xFF;
+
+			/* update gamma B */
+			temp = ((lhbm_whitebuf.lhbm_250[4] << 8 | lhbm_whitebuf.lhbm_250[5])*
+						(rgb_ratio_table_250nit[i].b_ratio*4))/1000;
+			lhbm_hlpm_on[2].para_list[4] = (temp >> 8) & 0xFF;
+			lhbm_hlpm_on[2].para_list[5] = temp & 0xFF;
+		break;
+		default:
+			pr_err("unsuppport cmd \n");
+			return -EINVAL;
 	}
-	return -1;
+
+	return 0;
 }
 
+#if 0
 static void mi_disp_panel_update_lhbm_backlight(struct mtk_dsi *dsi,enum lhbm_cmd_type type , int bl_level) {
 	u8 backlight_buf[2] = {0};
 	struct lcm *ctx = NULL;
@@ -3573,6 +2958,7 @@ static void mi_disp_panel_update_lhbm_alpha(struct mtk_dsi *dsi,enum lhbm_cmd_ty
 	pr_info("mi_disp_panel_update_lhbm_alpha end\n");
 	return;
 }
+#endif
 
 static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_state)
 {
@@ -3641,13 +3027,13 @@ static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_sta
 		break;
 	case LOCAL_HBM_NORMAL_WHITE_110NIT:
 		if (atomic_read(&doze_enable)) {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level_doze);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level_doze);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W250, bl_level_doze);
 			//mi_disp_panel_update_lhbm_backlight(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W250, bl_level_doze);
 			ctx->doze_suspend = false;
 		} else {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_WHITE_250, bl_level);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_WHITE_250, bl_level);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_WHITE_250, bl_level);
 			mi_disp_panel_send_lhbm(dsi, TYPE_WHITE_250, bl_level);
 		}
@@ -3656,7 +3042,7 @@ static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_sta
 	case LOCAL_HBM_NORMAL_GREEN_500NIT:
 		mi_cfg->dimming_state = STATE_DIM_BLOCK;
 		pr_info("LOCAL_HBM_NORMAL_GREEN_500NIt\n");
-		mi_disp_panel_update_lhbm_alpha(dsi, TYPE_GREEN_500, bl_level);
+		//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_GREEN_500, bl_level);
 		mi_disp_panel_update_lhbm_white_param(dsi, TYPE_GREEN_500, bl_level);
 		mi_disp_panel_send_lhbm(dsi, TYPE_GREEN_500, bl_level);
 		ctx->doze_suspend = false;
@@ -3665,13 +3051,13 @@ static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_sta
 	case LOCAL_HBM_NORMAL_WHITE_1000NIT:
 		pr_info("LOCAL_HBM_NORMAL_WHITE_1300NIT in HBM\n");
 		if (atomic_read(&doze_enable)) {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level_doze);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			//mi_disp_panel_update_lhbm_backlight(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			ctx->doze_suspend = false;
 		} else {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_WHITE_1300, bl_level);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_WHITE_1300, bl_level);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_WHITE_1300, bl_level);
 			mi_disp_panel_send_lhbm(dsi, TYPE_WHITE_1300, bl_level);
 		}
@@ -3680,11 +3066,11 @@ static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_sta
 	case LOCAL_HBM_HLPM_WHITE_1000NIT:
 		pr_info("LOCAL_HBM_HLPM_WHITE_1300NIT in HBM\n");
 		if (atomic_read(&doze_enable) || !bl_level) {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level_doze);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W1300, bl_level_doze);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W1300, bl_level_doze);
 		} else {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W1300, bl_level);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W1300, bl_level);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W1300, bl_level);
 		}
@@ -3696,11 +3082,11 @@ static int panel_set_lhbm_fod(struct mtk_dsi *dsi, enum local_hbm_state lhbm_sta
 		pr_info("LOCAL_HBM_HLPM_WHITE_250NIT\n");
 		mi_cfg->dimming_state = STATE_DIM_BLOCK;
 		if (atomic_read(&doze_enable) || !bl_level) {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level_doze);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level_doze);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W250, bl_level_doze);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W250, bl_level_doze);
 		} else {
-			mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level);
+			//mi_disp_panel_update_lhbm_alpha(dsi, TYPE_HLPM_W250, bl_level);
 			mi_disp_panel_update_lhbm_white_param(dsi, TYPE_HLPM_W250, bl_level);
 			mi_disp_panel_send_lhbm(dsi, TYPE_HLPM_W250, bl_level);
 		}
@@ -3729,8 +3115,8 @@ static int panel_fod_state_check (void * dsi, dcs_write_gce cb, void *handle)
 	ctx = panel_to_lcm(mtk_dsi->panel);
 
 	if (ctx->lhbm_en) {
-		/*char lhbm_off_page[] = {0x87,0x24};
-		cb(dsi, handle, lhbm_off_page, ARRAY_SIZE(lhbm_off_page));*/
+		char lhbm_off_page[] = {0x87,0x20};
+		cb(dsi, handle, lhbm_off_page, ARRAY_SIZE(lhbm_off_page));
 		ctx->lhbm_en = false;
 		pr_info("%s set lhbm off\n", __func__);
 	} else {
@@ -3740,7 +3126,55 @@ static int panel_fod_state_check (void * dsi, dcs_write_gce cb, void *handle)
 	pr_info("%s !-\n", __func__);
 	return 0;
 }
-#endif
+
+static int panel_fod_state_check_v2(struct drm_panel *panel, void *dsi_drv, mtk_dsi_ddic_cmd cb, void *handle,
+			struct mtk_dsi_cmd_option *cmd_opt)
+{
+	int i = 0;
+	struct lcm *ctx = NULL;
+	struct LCM_setting_table_v2 lhbm_off_setting_v2[] = {
+		{02,{0x87,0x20}},
+	};
+	struct mipi_dsi_msg lhbm_off_code[ARRAY_SIZE(lhbm_off_setting_v2)] = { 0 };
+
+	pr_info("%s: +\n", __func__);
+
+	if (!panel) {
+		pr_err("%s, error, panel is NULL\n", __func__);
+		return -1;
+	}
+
+	ctx = panel_to_lcm(panel);
+	if (!ctx) {
+		pr_err("ctx is null\n");
+		return -1;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(lhbm_off_setting_v2); i++) {
+		lhbm_off_code[i].tx_len= lhbm_off_setting_v2[i].count;
+		lhbm_off_code[i].tx_buf = lhbm_off_setting_v2[i].para_list;
+	}
+
+	struct mtk_dsi_cmd_msg lhbm_off_cmd = {
+		.is_rd = 0, /* 0:write 1:read */
+		.is_package = 0,
+		.rd_to_slot = 0,
+		.cmd_num = ARRAY_SIZE(lhbm_off_setting_v2),
+		.transfer_mode = PACKET_LP_MODE,
+		.cmd_msg = lhbm_off_code,
+	};
+
+	if (ctx->lhbm_en) {
+		cb(dsi_drv, handle, cmd_opt, &lhbm_off_cmd);
+		ctx->lhbm_en = false;
+		pr_info("%s set lhbm off\n", __func__);
+	} else {
+		pr_info("%s lhbm not enable\n", __func__);
+	}
+
+	pr_info("%s !-\n", __func__);
+	return 0;
+}
 
 static int panel_get_gir_status(struct drm_panel *panel)
 {
@@ -3819,7 +3253,7 @@ err:
 static int panel_set_gray_by_temperature (struct drm_panel *panel, int level)
 {
 	int ret = 0;
-	struct lcm *ctx;
+	struct lcm *ctx = NULL;
 	pr_info("%s: +\n", __func__);
 
 	if (!panel) {
@@ -3827,25 +3261,29 @@ static int panel_set_gray_by_temperature (struct drm_panel *panel, int level)
 		ret = -1;
 		goto err;
 	}
-
+	if (panel_build_id < PANEL_BUILD_ID_P01) {
+		pr_err("%s: panel build id is earlier than p01\n", __func__);
+		ret = -1;
+		goto err;
+	}
 	ctx = panel_to_lcm(panel);
+	if (!ctx->enabled) {
+		ctx->gray_level = level;
+		ret = -1;
+		pr_err("%s: panel isn't enabled\n", __func__);
+		goto err;
+	}
 	pr_info("%s: level = %x, fps:%d\n", __func__, level, ctx->dynamic_fps);
 	if (level > DBI_TEMP_INDEX1)
 		level = DBI_TEMP_INDEX1;
 	else if (level < DBI_TEMP_INDEX5)
 		level = DBI_TEMP_INDEX5;
-
 	ctx->gray_level = level;
+
 	if (ctx->dynamic_fps == 60)
 		gray_3d_lut[0].para_list[1] = level + DBI_TEMP_OFFSET;
 	else
 		gray_3d_lut[0].para_list[1] = level;
-	if (!ctx->enabled) {
-		ret = -1;
-		pr_err("%s: panel isn't enabled\n", __func__);
-		goto err;
-	}
-
 	mi_disp_panel_ddic_send_cmd(gray_3d_lut, ARRAY_SIZE(gray_3d_lut), false);
 err:
 	pr_info("%s: -, level:0x%x\n", __func__, level);
@@ -3956,7 +3394,6 @@ static int lcm_update_roi_cmdq_v2(void *dsi_drv,
 		struct mtk_dsi_cmd_option *cmd_opt)
 {
 	int i = 0;
-	/* {0x05, {0x2B, y0_msb, y0_lsb, y1_msb, y1_lsb}} */
 	struct mtk_panel_para_table roi_setting[] = {
 		{0x05, {0x2B, (y >> 8) & 0xFF, y & 0xFF, ((y + h - 1) >> 8) & 0xFF,
 				(y + h - 1) & 0xFF}},
@@ -3996,7 +3433,6 @@ static struct mtk_panel_funcs ext_funcs = {
 	.mode_switch = mode_switch,
 	.mode_switch_v2 = mode_switch_v2,
 	.panel_init_v2 = lcm_panel_init_v2,
-	.panel_deinit = lcm_panel_deinit,
 	.panel_deinit_v2 = lcm_panel_deinit_v2,
 	.panel_poweron = lcm_panel_poweron,
 	.panel_poweroff = lcm_panel_poweroff,
@@ -4025,11 +3461,12 @@ static struct mtk_panel_funcs ext_funcs = {
 	.get_doze_brightness = panel_get_doze_brightness,
 	.doze_suspend = panel_doze_suspend,
 	.doze_suspend_v2 = panel_doze_suspend_v2,
-	//.panel_fod_lhbm_init = panel_fod_lhbm_init,
-	//.set_lhbm_fod = panel_set_lhbm_fod,
+	.panel_fod_lhbm_init = panel_fod_lhbm_init,
+	.set_lhbm_fod = panel_set_lhbm_fod,
 	.get_wp_info = panel_get_wp_info,
 	.set_gray_by_temperature = panel_set_gray_by_temperature,
-	//.fod_state_check = panel_fod_state_check,
+	.fod_state_check = panel_fod_state_check,
+	.fod_state_check_v2 = panel_fod_state_check_v2,
 	.get_sn_info = panel_get_sn_info,
 	//.set_dimming_on = panel_set_dimming_on,
 	.set_dynamic_elvss_level = panel_set_dynamic_elvss_level,
@@ -4070,11 +3507,11 @@ static int lcm_get_modes(struct drm_panel *panel, struct drm_connector *connecto
 	mode0->type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED;
 	drm_mode_probed_add(connector, mode0);
 
-	mode2 = drm_mode_duplicate(connector->dev, &performence_mode_165);
+	mode2 = drm_mode_duplicate(connector->dev, &middle_mode);
 	if (!mode2) {
 		dev_err(connector->dev->dev, "failed to add mode %ux%ux@%u\n",
-			performence_mode_165.hdisplay, performence_mode_165.vdisplay,
-			drm_mode_vrefresh(&performence_mode_165));
+			middle_mode.hdisplay, middle_mode.vdisplay,
+			drm_mode_vrefresh(&middle_mode));
 		return -ENOMEM;
 	}
 	drm_mode_set_name(mode2);
@@ -4124,7 +3561,7 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	struct device_node *backlight;
 	int ret;
 
-	pr_info("%s p12-42-02-0a-dsc-cmd +\n", __func__);
+	pr_info("%s p12u-42-02-0a-dsc-cmd +\n", __func__);
 
 	dsi_node = of_get_parent(dev->of_node);
 	if (dsi_node) {
@@ -4204,8 +3641,8 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	ext_params.err_flag_irq_gpio = of_get_named_gpio(
 		dev->of_node, "mi,esd-err-irq-gpio",0);
 	ext_params.err_flag_irq_flags = 0x2002;
-	ext_params_165hz.err_flag_irq_gpio = ext_params.err_flag_irq_gpio;
-	ext_params_165hz.err_flag_irq_flags = ext_params.err_flag_irq_flags;
+	ext_params_90hz.err_flag_irq_gpio = ext_params.err_flag_irq_gpio;
+	ext_params_90hz.err_flag_irq_flags = ext_params.err_flag_irq_flags;
 	ext_params_120hz.err_flag_irq_gpio = ext_params.err_flag_irq_gpio;
 	ext_params_120hz.err_flag_irq_flags = ext_params.err_flag_irq_flags;
 	ext_params_144hz.err_flag_irq_gpio = ext_params.err_flag_irq_gpio;
@@ -4223,7 +3660,6 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	ctx->panel_id = panel_id;
 	ctx->max_brightness_clone = MAX_BRIGHTNESS_CLONE;
 	ctx->factory_max_brightness = FACTORY_MAX_BRIGHTNESS;
-	mipi_volt = 0xB; //520mV(300mV ~ 600mV, step 20mV, default 460mV)
 
 	drm_panel_init(&ctx->panel, dev, &lcm_drm_funcs, DRM_MODE_CONNECTOR_DSI);
 
@@ -4239,7 +3675,7 @@ static int lcm_probe(struct mipi_dsi_device *dsi)
 	if (ret < 0)
 		return ret;
 #endif
-#if defined(CONFIG_VIS_DISPLAY_V2_D2)
+#if defined(CONFIG_VIS_DISPLAY_DALI)
 	//Novatek ASIC Notify lcm_id and tricking.
 	if (is_mi_dev_support_nova()) {
 		nvt_get_lcm_id_notify(nvt_get_lcm_id_42);
@@ -4265,7 +3701,7 @@ static void lcm_remove(struct mipi_dsi_device *dsi)
 }
 
 static const struct of_device_id lcm_of_match[] = {
-	{ .compatible = "p12_42_02_0a_dsc_cmd,lcm", },
+	{ .compatible = "p12u_42_02_0a_dsc_cmd,lcm", },
 	{ }
 };
 
@@ -4275,7 +3711,7 @@ static struct mipi_dsi_driver lcm_driver = {
 	.probe = lcm_probe,
 	.remove = lcm_remove,
 	.driver = {
-		.name = "p12_42_02_0a_dsc_cmd,lcm",
+		.name = "p12u_42_02_0a_dsc_cmd,lcm",
 		.owner = THIS_MODULE,
 		.of_match_table = lcm_of_match,
 	},
@@ -4297,5 +3733,5 @@ MODULE_PARM_DESC(panel_sn, "panel_sn=<panel_sn_info>");
 
 
 MODULE_AUTHOR("Tang Honghui <tanghonghui@xiaomi.com>");
-MODULE_DESCRIPTION("p12_42_02_0a_dsc_cmd oled panel driver");
+MODULE_DESCRIPTION("p12u_42_02_0a_dsc_cmd oled panel driver");
 MODULE_LICENSE("GPL v2");

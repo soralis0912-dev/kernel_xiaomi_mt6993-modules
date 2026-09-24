@@ -234,6 +234,13 @@
 		ver = "v2";
 	};
 
+	mtdoops_pmsg_mem: mtdoops_pmsg_region {
+		compatible = "mtdoops";
+		reg = <0x0 0xaec00000 0 0x410000>;
+		console-size = <0x200000>;
+		pmsg-size = <0x200000>;
+	};
+
 	cache-parity {
 		compatible = "mediatek,mt6985-cache-parity";
 		ecc-irq-support = <1>;
@@ -24455,6 +24462,7 @@ sw_info,frame_id,custom,pipeline_stage,RPID,UID";
 
 #include "mediatek/cust_mt6993_msdc.dtsi"
 #include "mediatek/trusty.dtsi"
+#include "mediatek/wonder.dtsi"
 #include "mediatek/cust_mt6993_connfem.dtsi"
 
 &hypervisor {

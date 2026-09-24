@@ -72,6 +72,8 @@ static inline bool is_kcompressd_enabled(void)
 	return static_branch_unlikely(&kcompressd_enabled);
 }
 
+#endif
+
 /* Set a value to stand for fifo depth */
 #define HWZRAM_IS_BUSY	(1 << CONFIG_ZRAM_ENGINE_COMP_FIFO_BITS)
 static atomic_t hwzram_busy = ATOMIC_INIT(0);
@@ -79,19 +81,22 @@ static inline bool is_hwzram_busy(void)
 {
 	return (atomic_read(&hwzram_busy) != 0);
 }
-
+static DEFINE_STATIC_KEY_FALSE(markhwbusy_enabled);
+static inline bool is_markhwbusy_enabled(void)
+{
+	return static_branch_unlikely(&markhwbusy_enabled);
+}
 static inline void mark_hwzram_busy(void)
 {
-	if(is_kcompressd_enabled())
-		atomic_set(&hwzram_busy, HWZRAM_IS_BUSY);
+	if(is_markhwbusy_enabled())
+ 		atomic_set(&hwzram_busy, HWZRAM_IS_BUSY);
 }
 
 static inline void mark_hwzram_not_busy(void)
 {
-	if(is_kcompressd_enabled())
-		atomic_dec_if_positive(&hwzram_busy);
+	if(is_markhwbusy_enabled())
+ 		atomic_dec_if_positive(&hwzram_busy);
 }
-#endif
 /* Module params (documentation at end) */
 static unsigned int num_devices = 1;
 /*
@@ -113,12 +118,12 @@ static int zram_slot_trylock(struct zram *zram, u32 index)
 
 static void zram_slot_lock(struct zram *zram, u32 index)
 {
-	spin_lock(&(ZRAM_TE(zram, index))->lock);
+	bit_spin_lock(ZRAM_LOCK, &(ZRAM_TE(zram, index))->flags);
 }
 
 static void zram_slot_unlock(struct zram *zram, u32 index)
 {
-	spin_unlock(&(ZRAM_TE(zram, index))->lock);
+	bit_spin_unlock(ZRAM_LOCK, &(ZRAM_TE(zram, index))->flags);
 }
 
 static inline bool init_done(struct zram *zram)
@@ -1423,6 +1428,7 @@ static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 			  struct bio *parent)
 {
 	int ret;
+	bool is_wb = false;
 
 	zram_slot_lock(zram, index);
 
@@ -1444,7 +1450,7 @@ static int zram_read_page(struct zram *zram, struct page *page, u32 index,
 
 	/* Should NEVER happen. Return bio error if it does. */
 	if (WARN_ON(ret < 0))
-		pr_err("Decompression failed! err=%d, page=%u\n", ret, index);
+		pr_err("Decompression failed! err=%d, page=%u, is_wb=%d\n", ret, index, is_wb);
 
 	return ret;
 }
@@ -2770,10 +2776,8 @@ static void hwcomp_compress_post_process_dc(int err, void *buffer, unsigned int 
 	zram_accessed(zram, index);
 	zram_slot_unlock(zram, index);
 
-#if IS_ENABLED(CONFIG_MTK_KCOMPRESSD)
 	/* Mark hwzram not busy if necessary */
 	mark_hwzram_not_busy();
-#endif
 	/* Update stats */
 	atomic64_inc(&zram->stats.pages_stored);
 
@@ -2904,10 +2908,9 @@ again:
 	/* Wait for HW available */
 	if (ret == -EBUSY) {
 
-#if IS_ENABLED(CONFIG_MTK_KCOMPRESSD)
 		/* Mark hwzram busy if necessary */
 		mark_hwzram_busy();
-#endif
+
 		if (wait) {
 #ifdef ZRAM_ENGINE_DEBUG
 			pr_info_ratelimited("%s: HW is busy, waiting for available.\n", __func__);
@@ -3109,8 +3112,8 @@ static void zram_hwonly_bio_write(struct zram *zram, struct bio *bio)
 		bv.bv_len = min_t(u32, bv.bv_len, PAGE_SIZE - offset);
 
 		/* HW compression - asynchronous */
-		if (ops->hw_bvec_write(zram, &bv, index, offset, bio, true) < 0) {
-
+		if (is_hwzram_busy() ||
+			ops->hw_bvec_write(zram, &bv, index, offset, bio, true) < 0) {
 			/* Failed to add request to HW, fallback to SW compression */
 			if (zram_bvec_write(zram, &bv, index, offset, bio) < 0) {
 				atomic64_inc(&zram->stats.failed_writes);
@@ -3479,6 +3482,9 @@ retry:
 	if (!strcmp(mode, "kcompressd:hw") || !strcmp(mode, "kcompressd"))
 		static_branch_enable(&kcompressd_enabled);
 #endif
+	/* Turn on markhwbusy_enabled if necessary */
+	if (!strcmp(mode, "kcompressd:hw") || !strcmp(mode, "hwonly"))
+		static_branch_enable(&markhwbusy_enabled);
 	/* Override SW algorithm if necessary before creating zcomp instance */
 	comp_mode_set_algorithm(zram);
 }

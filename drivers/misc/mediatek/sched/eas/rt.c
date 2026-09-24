@@ -92,6 +92,7 @@ static inline bool should_honor_rt_sync(struct rq *rq, struct task_struct *p,
 	 * and force it to run for a likely small time after the RT wakee is
 	 * done. So, only honor RT sync wakeups from RT wakers.
 	 */
+
 	return sync && task_has_rt_policy(rq->curr) &&
 		p->prio <= rq->rt.highest_prio.next &&
 		rq->rt.rt_nr_running <= 2;
@@ -461,6 +462,7 @@ static void mtk_rt_energy_aware_wake_cpu(struct task_struct *p,
 			continue;
 
 		for_each_cpu_and(cpu, lowest_mask, &cpu_array[order_index][cluster][reverse]) {
+
 			track_sched_cpu_util(p, cpu, min_cap, max_cap);
 
 			if (!cpumask_test_cpu(cpu, p->cpus_ptr))
@@ -479,6 +481,7 @@ static void mtk_rt_energy_aware_wake_cpu(struct task_struct *p,
 #else
 			cpu_has_lt = is_task_latency_sensitive(cpu_rq(cpu)->curr);
 #endif
+
 			/*
 			 * When the best cpu is suitable and the current is not,
 			 * skip it

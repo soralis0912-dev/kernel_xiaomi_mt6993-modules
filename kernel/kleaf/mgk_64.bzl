@@ -121,15 +121,15 @@ mgk_64_kleaf_modules = [
     "//vendor/mediatek/kernel_modules/perf_common_int:perf_common_int",
     "//vendor/mediatek/kernel_modules/game_cus:game_cus",
     "//vendor/mediatek/kernel_modules/game_int:game_int",
-    "//vendor/xiaomi/proprietary/touch/touchfeature_v2/touch_driver:xiaomi_touch_prague",
-    "//vendor/xiaomi/proprietary/touch/touchfeature_v2/touch_driver:goodix_core_prague",
-    "//vendor/xiaomi/proprietary/touch/touchfeature_v2/touch_driver:focaltech_touch_prague",
+    "//vendor/xiaomi/proprietary/touch/touchfeature_v2/touch_driver:xiaomi_touch_warhol",
+    "//vendor/xiaomi/proprietary/touch/touchfeature_v2/touch_driver:goodix_core_warhol",
     "//vendor/xiaomi/proprietary/mitee_drv:mitee",
     "//vendor/xiaomi/proprietary/mitee_drv:mitee_ffa",
     "//vendor/xiaomi/proprietary/fingerprint:fingerprint_driver",
     "//vendor/xiaomi/proprietary/slm/kmod_mtk:kmod",
     "//vendor/xiaomi/proprietary/matt/core_mtk:matt",
     "//vendor/xiaomi/proprietary/minet/driver_mtk:minet",
+    "//vendor/xiaomi/proprietary/minet/wonder/wonder_mtk_k612:wonder",
     "//vendor/xiaomi/proprietary/minet/mibbr/mibbr_mtk_k612:mibbr",
     "//vendor/xiaomi/proprietary/miwillp/engine_mtk:miwill",
     "//vendor/xiaomi/proprietary/minet/miicmpfilter/driver_mtk:miicmpfilter",
@@ -1379,6 +1379,7 @@ mgk_64_kleaf_device_modules = [
     "//kernel_device_modules-{}/drivers/misc/mediatek/nfc/p73-spi:p73".format(kernel_version),
     "//kernel_device_modules-{}/drivers/misc/mediatek/nfc/nxp-i2c:nxp_i2c".format(kernel_version),
     "//kernel_device_modules-{}/drivers/misc/mediatek/cam_log:cam_log".format(kernel_version),
+    "//kernel_device_modules-{}/drivers/mihw/cache_prefetch:cache_prefetch".format(kernel_version),
 ]
 
 mgk_64_kleaf_platform_modules = {
@@ -2296,6 +2297,14 @@ mgk_64_platform_device_user_modules = {
 
 
 def get_overlay_modules_list():
+    if "prague" in DEFCONFIG_OVERLAYS:
+        mgk_64_device_modules.append("drivers/mihw/cache_prefetch/cache_prefetch.ko")
+
+    if "yili" in DEFCONFIG_OVERLAYS:
+        mgk_64_device_modules.append("drivers/input/misc/aw8693x_haptic_yili/aw8693x_vibrator_yili.ko")
+        mgk_64_device_modules.append("drivers/mihw/cache_prefetch/cache_prefetch.ko")
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/bootmonitor:bootmonitor".format(kernel_version))
+
     if "auto.config" in DEFCONFIG_OVERLAYS:
         mgk_64_platform_device_modules.update({"drivers/clk/mediatek/clk-mt6991-ivi.ko":"mt6991"})
         mgk_64_platform_device_modules.update({"drivers/soc/mediatek/mtk-scpsys-mt6991-ivi.ko":"mt6991"})
@@ -5176,17 +5185,17 @@ def get_overlay_modules_list():
         mgk_64_kleaf_modules.append("//vendor/mediatek/kernel_modules/connectivity/bt/linux_v2_ce:btmtk_unify")
         mgk_64_kleaf_modules.append("//vendor/mediatek/kernel_modules/connectivity/wlan/core/gen4-mt79xx:wlan_mt7902")
 
-    if "prague" in DEFCONFIG_OVERLAYS:
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/gpu/drm/panel:panel-p12-42-02-0a-dsc-cmd".format(kernel_version))
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/gpu/drm/panel:panel-p12-36-0d-0b-dsc-cmd".format(kernel_version))
-        mgk_64_device_modules.append("drivers/input/misc/aw8693x_haptic/aw8693x_vibrator.ko")
-        mgk_64_device_modules.append("drivers/misc/perf_helper/perf_helper.ko")
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/cam_intentaware_fsys:cam_fsys".format(kernel_version))
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/dio_dma_mapper:dio_dma_mapper".format(kernel_version))
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/mi_t1_chip:mi_t1_gpio".format(kernel_version))
-        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/power/supply:xm_pwm_fan".format(kernel_version))
+    if "warhol" in DEFCONFIG_OVERLAYS:
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/gpu/drm/panel:panel-p12u-42-02-0a-dsc-cmd".format(kernel_version))
+        mgk_64_device_modules.append("drivers/input/misc/aw_haptic/haptic.ko")
         mgk_64_device_modules.append("drivers/misc/mediatek/nfc/p73-spi/p73.ko")
         mgk_64_device_modules.append("drivers/misc/mediatek/nfc/nxp-i2c/nxp_i2c.ko")
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/mi_t1_chip:mi_t1_gpio".format(kernel_version))
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/power/supply/wireless_chg:nuvolta_1671".format(kernel_version))
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/power/supply/wireless_chg:wireless_charger_class".format(kernel_version))
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/power/supply/wireless_chg:wls_cp_manager".format(kernel_version))
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/cam_intentaware_fsys:cam_fsys".format(kernel_version))
+        mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/misc/xiaomi/dio_dma_mapper:dio_dma_mapper".format(kernel_version))
         mgk_64_kleaf_device_modules.append("//kernel_device_modules-{}/drivers/power/supply:hl7603".format(kernel_version))
 
     if "vm_uos.config" in DEFCONFIG_OVERLAYS:
